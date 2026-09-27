@@ -3,7 +3,7 @@ export * from './MediaManager.js';
 export * from './ChatManager.js';
 export * from './BreakoutManager.js';
 export * from './NexusClient.js';
-export { NexusEvents } from '@nexusrtc/core';
+export { NexusEvents, RoomPermission } from '@nexusrtc/core';
 export type {
   Participant,
   Room,
@@ -11,5 +11,7 @@ export type {
   BreakoutRoom,
   Recording,
   LiveBroadcastConfig,
-  JoinedResponse
+  JoinedResponse,
+  RoomPermissionsConfig,
+  RolePermissions
 } from '@nexusrtc/core';

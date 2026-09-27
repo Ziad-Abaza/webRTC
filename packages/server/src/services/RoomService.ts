@@ -7,7 +7,10 @@ import {
   Participant,
   ParticipantRole,
   AuthTokenPayload,
-  MediaTokenResult
+  MediaTokenResult,
+  RoomPermissionsConfig,
+  RoomPermission,
+  resolveEffectivePermissions
 } from '@nexusrtc/core';
 import { ServerConfig } from '../config/index.js';
 
@@ -18,6 +21,7 @@ export interface CreateRoomInput {
   password?: string;
   hostId: string;
   features?: Partial<Room['features']>;
+  permissions?: RoomPermissionsConfig;
   mediaProvider?: string;
   metadata?: Record<string, unknown>;
 }
@@ -68,6 +72,7 @@ export class RoomService {
         waitingRoomEnabled: input.features?.waitingRoomEnabled ?? false,
         maxParticipants: input.features?.maxParticipants ?? 100
       },
+      permissions: input.permissions,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       metadata: input.metadata
@@ -97,6 +102,29 @@ export class RoomService {
     });
   }
 
+  async updateRoomPermissions(id: string, permissions: RoomPermissionsConfig): Promise<Room> {
+    const room = await this.getRoom(id);
+    if (!room) throw new Error(`Room '${id}' not found`);
+    return this.db.updateRoom(room.id, {
+      permissions: {
+        ...room.permissions,
+        ...permissions,
+        roles: {
+          ...room.permissions?.roles,
+          ...permissions.roles
+        },
+        participantOverrides: {
+          ...room.permissions?.participantOverrides,
+          ...permissions.participantOverrides
+        },
+        locks: {
+          ...room.permissions?.locks,
+          ...permissions.locks
+        }
+      }
+    });
+  }
+
   /**
    * Generates a client join token for a participant to connect to the signaling server and media.
    */
@@ -117,6 +145,10 @@ export class RoomService {
     const participantId = input.participantId || uuidv4();
     const role: ParticipantRole = input.role || (input.participantId === room.hostId ? 'host' : 'participant');
 
+    // Compute authoritatively resolved effective permissions for this participant
+    const effectiveSet = resolveEffectivePermissions(role, participantId, room.permissions);
+    const permissions = Array.from(effectiveSet);
+
     const participant: Participant = {
       id: participantId,
       name: input.name,
@@ -128,6 +160,7 @@ export class RoomService {
       isVideoMuted: true,
       isScreenSharing: false,
       isHandRaised: false,
+      permissions,
       metadata: input.metadata
     };
 

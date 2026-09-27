@@ -6,6 +6,7 @@ A production-grade, framework-agnostic real-time communication platform designed
 
 ## 🌟 Key Capabilities
 
+- **Granular Permissions & Role Capability Control:** Granular, extensible policy system. The session owner/administrator has complete control over permissions per room, per role, and per participant (microphone, camera, screen sharing, chat, private messaging, breakout creation/joining, recording, broadcasting, and moderation). Permissions are authoritatively enforced by the server on all signaling actions, with client UI reflecting effective permissions and dynamic room locks.
 - **Group Video Meetings & Private 1-on-1 Rooms:** Configurable room lifecycle, access tokens, and feature toggles.
 - **Pluggable Media Engine:** Clean `IMediaProvider` abstraction. Shipped with initial Jitsi Meet (RFC 7519 / JaaS JWT compatible) media SFU adapter, easily swappable with Mediasoup, LiveKit, or native WebRTC mesh.
 - **Pluggable Database & Storage:** `IDatabaseAdapter` (Memory, SQLite, PostgreSQL ready) and `IStorageProvider` (Local Filesystem, S3/MinIO compatible).

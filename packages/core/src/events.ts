@@ -25,10 +25,13 @@ export enum NexusEvents {
   HAND_RAISED = 'nexus:hand_raised',
   HAND_LOWERED = 'nexus:hand_lowered',
 
-  // Moderation
+  // Moderation & Permissions
   MODERATE_PARTICIPANT = 'nexus:moderate_participant',
   PARTICIPANT_MODERATED = 'nexus:participant_moderated',
   ROOM_MUTED_ALL = 'nexus:room_muted_all',
+  UPDATE_PERMISSIONS = 'nexus:update_permissions',
+  PERMISSIONS_UPDATED = 'nexus:permissions_updated',
+  LOCKS_CHANGED = 'nexus:locks_changed',
 
   // Chat
   CHAT_SEND = 'nexus:chat_send',

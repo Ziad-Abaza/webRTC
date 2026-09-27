@@ -103,11 +103,35 @@ export class MediaManager extends EventEmitter {
     }
   }
 
+  muteAudio(force: boolean = true): void {
+    if (this.jitsiApi) {
+      if (force && !this.isAudioMuted) {
+        this.jitsiApi.executeCommand('toggleAudio');
+      }
+    } else {
+      this.isAudioMuted = force;
+      this.sendSocketMessage(NexusEvents.MEDIA_STATE_CHANGED, { isAudioMuted: this.isAudioMuted });
+      this.emit('audioMuteChanged', this.isAudioMuted);
+    }
+  }
+
   toggleVideo(): void {
     if (this.jitsiApi) {
       this.jitsiApi.executeCommand('toggleVideo');
     } else {
       this.isVideoMuted = !this.isVideoMuted;
+      this.sendSocketMessage(NexusEvents.MEDIA_STATE_CHANGED, { isVideoMuted: this.isVideoMuted });
+      this.emit('videoMuteChanged', this.isVideoMuted);
+    }
+  }
+
+  muteVideo(force: boolean = true): void {
+    if (this.jitsiApi) {
+      if (force && !this.isVideoMuted) {
+        this.jitsiApi.executeCommand('toggleVideo');
+      }
+    } else {
+      this.isVideoMuted = force;
       this.sendSocketMessage(NexusEvents.MEDIA_STATE_CHANGED, { isVideoMuted: this.isVideoMuted });
       this.emit('videoMuteChanged', this.isVideoMuted);
     }
@@ -121,6 +145,30 @@ export class MediaManager extends EventEmitter {
       this.sendSocketMessage(NexusEvents.MEDIA_STATE_CHANGED, { isScreenSharing: this.isScreenSharing });
       this.emit('screenSharingChanged', this.isScreenSharing);
     }
+  }
+
+  stopScreenShare(): void {
+    if (this.jitsiApi) {
+      if (this.isScreenSharing) {
+        this.jitsiApi.executeCommand('toggleShareScreen');
+      }
+    } else {
+      this.isScreenSharing = false;
+      this.sendSocketMessage(NexusEvents.MEDIA_STATE_CHANGED, { isScreenSharing: false });
+      this.emit('screenSharingChanged', false);
+    }
+  }
+
+  getAudioMuted(): boolean {
+    return this.isAudioMuted;
+  }
+
+  getVideoMuted(): boolean {
+    return this.isVideoMuted;
+  }
+
+  getScreenSharing(): boolean {
+    return this.isScreenSharing;
   }
 
   dispose(): void {

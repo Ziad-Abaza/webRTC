@@ -27,9 +27,32 @@ class MeetingController extends Controller
             'recordingEnabled' => 'nullable|boolean',
             'chatEnabled' => 'nullable|boolean',
             'breakoutRoomsEnabled' => 'nullable|boolean',
+            'allowParticipantVideo' => 'nullable|boolean',
+            'allowParticipantAudio' => 'nullable|boolean',
+            'allowParticipantScreenshare' => 'nullable|boolean',
+            'allowParticipantChat' => 'nullable|boolean',
         ]);
 
         try {
+            // Build custom granular permissions for participant role
+            $participantPermissions = [
+                'interaction:raise_hand',
+                'breakout:join'
+            ];
+            if ($request->boolean('allowParticipantAudio', true)) {
+                $participantPermissions[] = 'media:send_audio';
+            }
+            if ($request->boolean('allowParticipantVideo', true)) {
+                $participantPermissions[] = 'media:send_video';
+            }
+            if ($request->boolean('allowParticipantScreenshare', false)) {
+                $participantPermissions[] = 'media:share_screen';
+            }
+            if ($request->boolean('allowParticipantChat', true)) {
+                $participantPermissions[] = 'chat:send';
+                $participantPermissions[] = 'chat:send_private';
+            }
+
             $room = NexusRTC::createRoom([
                 'title' => $validated['title'],
                 'hostId' => 'host-' . substr(md5(uniqid()), 0, 8),
@@ -40,6 +63,11 @@ class MeetingController extends Controller
                     'screenShareEnabled' => true,
                     'raiseHandEnabled' => true,
                 ],
+                'permissions' => [
+                    'roles' => [
+                        'participant' => $participantPermissions
+                    ]
+                ]
             ]);
 
             return redirect()->route('meetings.show', [

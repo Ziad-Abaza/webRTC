@@ -13,6 +13,7 @@ class Room
         public readonly string $mediaProvider = 'jitsi',
         public readonly array $mediaConfig = [],
         public readonly array $features = [],
+        public readonly array $permissions = [],
         public readonly ?string $description = null,
         public readonly array $metadata = []
     ) {}
@@ -28,6 +29,7 @@ class Room
             mediaProvider: $data['mediaProvider'] ?? 'jitsi',
             mediaConfig: $data['mediaConfig'] ?? [],
             features: $data['features'] ?? [],
+            permissions: $data['permissions'] ?? [],
             description: $data['description'] ?? null,
             metadata: $data['metadata'] ?? []
         );

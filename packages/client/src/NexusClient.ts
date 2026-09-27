@@ -188,6 +188,25 @@ export class NexusClient extends EventEmitter {
         break;
       }
 
+      case NexusEvents.PERMISSIONS_UPDATED: {
+        const { participantId, permissions } = payload;
+        const self = this.getSelf();
+        if (self && self.id === participantId) {
+          self.permissions = permissions;
+        }
+        const p = this.participantsMap.get(participantId);
+        if (p) {
+          p.permissions = permissions;
+        }
+        this.emit('permissionsUpdated', payload);
+        break;
+      }
+
+      case NexusEvents.LOCKS_CHANGED: {
+        this.emit('locksChanged', payload);
+        break;
+      }
+
       case NexusEvents.ERROR: {
         this.emit('error', payload);
         break;
@@ -202,6 +221,22 @@ export class NexusClient extends EventEmitter {
     if (this.ws && this.ws.readyState === (this.ws.OPEN ?? 1)) {
       this.ws.send(JSON.stringify({ event, payload }));
     }
+  }
+
+  // Permissions & Capabilities
+  hasPermission(permission: string): boolean {
+    const self = this.getSelf();
+    if (!self || !self.permissions) return false;
+    return self.permissions.includes(permission as any);
+  }
+
+  getEffectivePermissions(): string[] {
+    const self = this.getSelf();
+    return (self?.permissions as string[]) || [];
+  }
+
+  updateRoomPermissions(permissions: any, locks?: any): void {
+    this.send(NexusEvents.UPDATE_PERMISSIONS, { permissions, locks });
   }
 
   // Raise Hand

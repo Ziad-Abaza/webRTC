@@ -9,6 +9,8 @@ use NexusRTC\Client\NexusRtcClient;
  * @method static \NexusRTC\Client\Models\Room createRoom(array $params)
  * @method static \NexusRTC\Client\Models\Room|null getRoom(string $idOrSlug)
  * @method static array generateJoinToken(string $roomIdOrSlug, array $participantData)
+ * @method static array getRoomPermissions(string $roomIdOrSlug)
+ * @method static array updateRoomPermissions(string $roomIdOrSlug, array $permissionsConfig)
  * @method static array listParticipants(string $roomId)
  * @method static array startRecording(string $roomId)
  * @method static array stopRecording(string $recordingId)

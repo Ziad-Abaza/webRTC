@@ -248,4 +248,110 @@ test('NexusRTC Server E2E Flow', async (t) => {
     aliceWs.close();
     bobWs.close();
   });
+
+  await t.test('Permissions: Viewer Role and Restricted Capabilities Enforcement', async () => {
+    // Create room with custom restricted permissions
+    const res = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        title: 'Restricted Webinar',
+        hostId: 'user-host',
+        permissions: {
+          roles: {
+            viewer: ['interaction:raise_hand'] // Viewers cannot chat or unmute
+          }
+        }
+      })
+    });
+    const webinar = await res.json();
+
+    // Generate Viewer Token
+    const viewerTokenRes = await fetch(`http://localhost:${port}/api/v1/rooms/${webinar.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'user-viewer',
+        name: 'Charlie Viewer',
+        role: 'viewer'
+      })
+    });
+    const viewerData = await viewerTokenRes.json();
+    assert.deepEqual(viewerData.participant.permissions, ['interaction:raise_hand']);
+
+    // Connect Viewer via WebSocket
+    const wsUrl = `ws://localhost:${port}/ws`;
+    const viewerWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => viewerWs.on('open', resolve));
+
+    const joinPromise = new Promise<any>((resolve) => {
+      viewerWs.on('message', (msg) => {
+        const parsed = JSON.parse(msg.toString());
+        if (parsed.event === NexusEvents.JOINED) resolve(parsed.payload);
+      });
+    });
+
+    viewerWs.send(JSON.stringify({
+      event: NexusEvents.JOIN,
+      payload: { token: viewerData.token }
+    }));
+    await joinPromise;
+
+    // Test 1: Viewer attempts to unmute audio -> Must receive Permission Denied error
+    const errAudioPromise = new Promise<any>((resolve) => {
+      viewerWs.on('message', (msg) => {
+        const parsed = JSON.parse(msg.toString());
+        if (parsed.event === NexusEvents.ERROR) resolve(parsed.payload);
+      });
+    });
+
+    viewerWs.send(JSON.stringify({
+      event: NexusEvents.MEDIA_STATE_CHANGED,
+      payload: { isAudioMuted: false }
+    }));
+
+    const audioErr = await errAudioPromise;
+    assert.match(audioErr.message, /Permission denied: unmuting audio/);
+
+    // Test 2: Viewer attempts to send chat -> Must receive Permission Denied error
+    const errChatPromise = new Promise<any>((resolve) => {
+      viewerWs.on('message', (msg) => {
+        const parsed = JSON.parse(msg.toString());
+        if (parsed.event === NexusEvents.ERROR) resolve(parsed.payload);
+      });
+    });
+
+    viewerWs.send(JSON.stringify({
+      event: NexusEvents.CHAT_SEND,
+      payload: { content: 'Hey everyone!' }
+    }));
+
+    const chatErr = await errChatPromise;
+    assert.match(chatErr.message, /Permission denied: room chat is disabled/);
+
+    // Test 3: Viewer raises hand -> Allowed by permissions
+    const handPromise = new Promise<any>((resolve) => {
+      viewerWs.on('message', (msg) => {
+        const parsed = JSON.parse(msg.toString());
+        if (parsed.event === NexusEvents.HAND_RAISED) resolve(parsed.payload);
+      });
+    });
+
+    viewerWs.send(JSON.stringify({
+      event: NexusEvents.HAND_RAISED,
+      payload: { isHandRaised: true }
+    }));
+
+    const handData = await handPromise;
+    assert.equal(handData.isHandRaised, true);
+    assert.equal(handData.participantId, 'user-viewer');
+
+    viewerWs.close();
+  });
 });

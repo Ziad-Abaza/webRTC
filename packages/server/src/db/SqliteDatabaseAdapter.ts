@@ -45,6 +45,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
         password TEXT,
         hostId TEXT NOT NULL,
         features TEXT NOT NULL,
+        permissions TEXT,
         mediaProvider TEXT NOT NULL,
         mediaConfig TEXT NOT NULL,
         createdAt INTEGER NOT NULL,
@@ -66,6 +67,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
         isScreenSharing INTEGER NOT NULL,
         isHandRaised INTEGER NOT NULL,
         handRaisedAt INTEGER,
+        permissions TEXT,
         currentBreakoutRoomId TEXT,
         metadata TEXT,
         PRIMARY KEY (id, roomId),
@@ -125,6 +127,18 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
         FOREIGN KEY (roomId) REFERENCES rooms (id) ON DELETE CASCADE
       );
     `);
+
+    // Ensure columns exist if table was already created in earlier version
+    try {
+      this.db.exec(`ALTER TABLE rooms ADD COLUMN permissions TEXT;`);
+    } catch {
+      // Column may already exist
+    }
+    try {
+      this.db.exec(`ALTER TABLE participants ADD COLUMN permissions TEXT;`);
+    } catch {
+      // Column may already exist
+    }
   }
 
   async close(): Promise<void> {
@@ -138,8 +152,8 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
     const stmt = this.db.prepare(`
       INSERT INTO rooms (
         id, slug, title, description, status, password, hostId,
-        features, mediaProvider, mediaConfig, createdAt, updatedAt, closedAt, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        features, permissions, mediaProvider, mediaConfig, createdAt, updatedAt, closedAt, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -151,6 +165,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       room.password || null,
       room.hostId,
       JSON.stringify(room.features),
+      room.permissions ? JSON.stringify(room.permissions) : null,
       room.mediaProvider,
       JSON.stringify(room.mediaConfig),
       room.createdAt,
@@ -185,7 +200,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
     const stmt = this.db.prepare(`
       UPDATE rooms SET
         title = ?, description = ?, status = ?, password = ?, hostId = ?,
-        features = ?, mediaProvider = ?, mediaConfig = ?, updatedAt = ?, closedAt = ?, metadata = ?
+        features = ?, permissions = ?, mediaProvider = ?, mediaConfig = ?, updatedAt = ?, closedAt = ?, metadata = ?
       WHERE id = ?
     `);
 
@@ -196,6 +211,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       updated.password || null,
       updated.hostId,
       JSON.stringify(updated.features),
+      updated.permissions ? JSON.stringify(updated.permissions) : null,
       updated.mediaProvider,
       JSON.stringify(updated.mediaConfig),
       updated.updatedAt,
@@ -541,6 +557,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       password: row.password || undefined,
       hostId: row.hostId,
       features: JSON.parse(row.features),
+      permissions: row.permissions ? JSON.parse(row.permissions) : undefined,
       mediaProvider: row.mediaProvider,
       mediaConfig: JSON.parse(row.mediaConfig),
       createdAt: row.createdAt,
@@ -563,6 +580,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       isScreenSharing: row.isScreenSharing === 1,
       isHandRaised: row.isHandRaised === 1,
       handRaisedAt: row.handRaisedAt || undefined,
+      permissions: row.permissions ? JSON.parse(row.permissions) : undefined,
       currentBreakoutRoomId: row.currentBreakoutRoomId || null,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined
     };

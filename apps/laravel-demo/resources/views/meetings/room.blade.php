@@ -252,6 +252,98 @@
                 appendChatMessage(msg);
             });
 
+            // Handle Server-Enforced Errors (Permission Denied, etc.)
+            client.on('error', (err) => {
+                const message = err?.message || 'Action not permitted by session administrator';
+                appendChatMessage({
+                    senderName: 'Security Warning',
+                    content: `⚠️ ${message}`,
+                    timestamp: Date.now()
+                });
+            });
+
+            // Permissions Sync & Dynamic Locks
+            function applyPermissionsToUI() {
+                const canAudio = client.hasPermission('media:send_audio');
+                const canVideo = client.hasPermission('media:send_video');
+                const canScreen = client.hasPermission('media:share_screen');
+                const canChat = client.hasPermission('chat:send');
+                const canRecord = client.hasPermission('session:start_recording');
+                const canBreakout = client.hasPermission('breakout:create');
+
+                const btnMic = document.getElementById('btn-toggle-mic');
+                const btnCam = document.getElementById('btn-toggle-cam');
+                const btnScreen = document.getElementById('btn-toggle-screen');
+                const chatInput = document.getElementById('chat-input');
+                const btnRecord = document.getElementById('btn-toggle-recording');
+                const btnBreakout = document.getElementById('btn-create-breakout');
+
+                if (btnMic) {
+                    btnMic.disabled = !canAudio;
+                    btnMic.classList.toggle('opacity-50', !canAudio);
+                    btnMic.classList.toggle('cursor-not-allowed', !canAudio);
+                    if (!canAudio) {
+                        btnMic.title = 'Microphone locked by session administrator';
+                        client.media.muteAudio(true);
+                    }
+                }
+
+                if (btnCam) {
+                    btnCam.disabled = !canVideo;
+                    btnCam.classList.toggle('opacity-50', !canVideo);
+                    btnCam.classList.toggle('cursor-not-allowed', !canVideo);
+                    if (!canVideo) {
+                        btnCam.title = 'Camera locked by session administrator';
+                        client.media.muteVideo(true);
+                    }
+                }
+
+                if (btnScreen) {
+                    btnScreen.disabled = !canScreen;
+                    btnScreen.classList.toggle('opacity-50', !canScreen);
+                    btnScreen.classList.toggle('cursor-not-allowed', !canScreen);
+                    if (!canScreen) {
+                        btnScreen.title = 'Screen sharing disabled by session administrator';
+                        client.media.stopScreenShare();
+                    }
+                }
+
+                if (chatInput) {
+                    chatInput.disabled = !canChat;
+                    if (!canChat) {
+                        chatInput.placeholder = 'Chat disabled by session administrator';
+                    } else {
+                        chatInput.placeholder = 'Type a message...';
+                    }
+                }
+
+                if (btnRecord) {
+                    btnRecord.style.display = canRecord ? 'flex' : 'none';
+                }
+
+                if (btnBreakout) {
+                    btnBreakout.disabled = !canBreakout;
+                }
+            }
+
+            client.on('joined', () => {
+                applyPermissionsToUI();
+            });
+
+            client.on('permissionsUpdated', (payload) => {
+                console.log('[NexusRTC] Permissions updated from server:', payload);
+                applyPermissionsToUI();
+                appendChatMessage({
+                    senderName: 'System Notice',
+                    content: 'Your permissions have been updated by the session administrator.',
+                    timestamp: Date.now()
+                });
+            });
+
+            client.on('locksChanged', (payload) => {
+                applyPermissionsToUI();
+            });
+
             // Recording Sync
             let isRecording = false;
             client.on('recordingStateChanged', (rec) => {

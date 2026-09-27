@@ -1,4 +1,6 @@
-export type ParticipantRole = 'host' | 'moderator' | 'participant' | 'viewer';
+import { RoomPermissionsConfig, RoomPermission } from './permissions.js';
+
+export type ParticipantRole = 'host' | 'moderator' | 'participant' | 'viewer' | string;
 
 export interface Participant {
   id: string;
@@ -12,6 +14,7 @@ export interface Participant {
   isScreenSharing: boolean;
   isHandRaised: boolean;
   handRaisedAt?: number;
+  permissions?: RoomPermission[];
   metadata?: Record<string, unknown>;
   currentBreakoutRoomId?: string | null;
 }
@@ -38,6 +41,7 @@ export interface Room {
   password?: string;
   hostId: string;
   features: RoomFeatures;
+  permissions?: RoomPermissionsConfig;
   mediaProvider: string; // e.g. 'jitsi', 'native-sfu'
   mediaConfig: Record<string, unknown>;
   createdAt: number;

@@ -15,14 +15,19 @@ class NexusRtcIntegrationTest extends TestCase
         $response = $this->get('/');
         $response->assertStatus(200);
         $response->assertSee('NexusRTC Engine');
+        $response->assertSee('Participant Default Permissions');
 
-        // 2. Submit meeting creation
+        // 2. Submit meeting creation with granular participant permission controls
         $storeResponse = $this->post('/meetings', [
             'title' => 'Executive Sprint Review',
             'hostName' => 'Sarah Connor',
             'recordingEnabled' => 1,
             'chatEnabled' => 1,
             'breakoutRoomsEnabled' => 1,
+            'allowParticipantAudio' => 1,
+            'allowParticipantVideo' => 1,
+            'allowParticipantScreenshare' => 0, // screenshare restricted for participants
+            'allowParticipantChat' => 1,
         ]);
 
         $storeResponse->assertStatus(302);

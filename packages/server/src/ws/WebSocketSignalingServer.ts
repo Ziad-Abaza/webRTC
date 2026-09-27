@@ -6,7 +6,10 @@ import {
   ChatMessage,
   Participant,
   JoinedResponse,
-  AuthTokenPayload
+  AuthTokenPayload,
+  RoomPermission,
+  resolveEffectivePermissions,
+  RoomPermissionsConfig
 } from '@nexusrtc/core';
 import { RoomService } from '../services/RoomService.js';
 import { RecordingService } from '../services/RecordingService.js';
@@ -132,6 +135,33 @@ export class WebSocketSignalingServer {
             case NexusEvents.MEDIA_STATE_CHANGED: {
               if (!clientSession) return;
               const { isAudioMuted, isVideoMuted, isScreenSharing } = payload;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+
+              // Authoritative capability checks
+              if (isAudioMuted === false && !this.hasPermission(clientSession, RoomPermission.SEND_AUDIO, room?.permissions)) {
+                ws.send(JSON.stringify({
+                  event: NexusEvents.ERROR,
+                  payload: { message: 'Permission denied: unmuting audio is not permitted for your role' }
+                }));
+                return;
+              }
+
+              if (isVideoMuted === false && !this.hasPermission(clientSession, RoomPermission.SEND_VIDEO, room?.permissions)) {
+                ws.send(JSON.stringify({
+                  event: NexusEvents.ERROR,
+                  payload: { message: 'Permission denied: starting video is not permitted for your role' }
+                }));
+                return;
+              }
+
+              if (isScreenSharing === true && !this.hasPermission(clientSession, RoomPermission.SHARE_SCREEN, room?.permissions)) {
+                ws.send(JSON.stringify({
+                  event: NexusEvents.ERROR,
+                  payload: { message: 'Permission denied: screen sharing is not permitted for your role' }
+                }));
+                return;
+              }
+
               const updates: Partial<Participant> = {};
               if (typeof isAudioMuted === 'boolean') updates.isAudioMuted = isAudioMuted;
               if (typeof isVideoMuted === 'boolean') updates.isVideoMuted = isVideoMuted;
@@ -158,6 +188,16 @@ export class WebSocketSignalingServer {
             case NexusEvents.HAND_RAISED: {
               if (!clientSession) return;
               const isHandRaised = payload?.isHandRaised ?? true;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+
+              if (isHandRaised && !this.hasPermission(clientSession, RoomPermission.RAISE_HAND, room?.permissions)) {
+                ws.send(JSON.stringify({
+                  event: NexusEvents.ERROR,
+                  payload: { message: 'Permission denied: raising hand is not permitted for your role' }
+                }));
+                return;
+              }
+
               const updated = await this.db.updateParticipant(clientSession.roomId, clientSession.participant.id, {
                 isHandRaised,
                 handRaisedAt: isHandRaised ? Date.now() : undefined
@@ -178,6 +218,16 @@ export class WebSocketSignalingServer {
               if (!clientSession) return;
               const { content, recipientId } = payload;
               if (!content || typeof content !== 'string') return;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+
+              const requiredPerm = recipientId ? RoomPermission.SEND_PRIVATE_CHAT : RoomPermission.SEND_CHAT;
+              if (!this.hasPermission(clientSession, requiredPerm, room?.permissions)) {
+                ws.send(JSON.stringify({
+                  event: NexusEvents.ERROR,
+                  payload: { message: `Permission denied: ${recipientId ? 'private' : 'room'} chat is disabled for your role` }
+                }));
+                return;
+              }
 
               const chatMsg: ChatMessage = {
                 id: uuidv4(),
@@ -207,15 +257,14 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.MODERATE_PARTICIPANT: {
               if (!clientSession) return;
-              // Only host or moderator can moderate
-              if (clientSession.participant.role !== 'host' && clientSession.participant.role !== 'moderator') {
-                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to moderate participants' } }));
-                return;
-              }
-
+              const room = await this.roomService.getRoom(clientSession.roomId);
               const { targetParticipantId, action } = payload;
-              // action: 'mute-audio' | 'mute-video' | 'kick'
+
               if (action === 'kick') {
+                if (!this.hasPermission(clientSession, RoomPermission.KICK_PARTICIPANTS, room?.permissions)) {
+                  ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to kick participants' } }));
+                  return;
+                }
                 this.sendToParticipant(clientSession.roomId, targetParticipantId, NexusEvents.PARTICIPANT_MODERATED, {
                   action: 'kick',
                   by: clientSession.participant.name
@@ -224,26 +273,80 @@ export class WebSocketSignalingServer {
                 if (targetSession) {
                   targetSession.ws.close();
                 }
-              } else if (action === 'mute-audio') {
-                await this.db.updateParticipant(clientSession.roomId, targetParticipantId, { isAudioMuted: true });
+              } else if (action === 'mute-audio' || action === 'mute-video') {
+                if (!this.hasPermission(clientSession, RoomPermission.MUTE_OTHERS, room?.permissions)) {
+                  ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to mute other participants' } }));
+                  return;
+                }
+                const updates = action === 'mute-audio' ? { isAudioMuted: true } : { isVideoMuted: true };
+                await this.db.updateParticipant(clientSession.roomId, targetParticipantId, updates);
                 this.broadcastToRoom(clientSession.roomId, NexusEvents.PARTICIPANT_MODERATED, {
                   participantId: targetParticipantId,
-                  action: 'mute-audio'
-                });
-              } else if (action === 'mute-video') {
-                await this.db.updateParticipant(clientSession.roomId, targetParticipantId, { isVideoMuted: true });
-                this.broadcastToRoom(clientSession.roomId, NexusEvents.PARTICIPANT_MODERATED, {
-                  participantId: targetParticipantId,
-                  action: 'mute-video'
+                  action
                 });
               }
               break;
             }
 
+            case NexusEvents.UPDATE_PERMISSIONS: {
+              if (!clientSession) return;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.UPDATE_ROOM_PERMISSIONS, room?.permissions)) {
+                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to update room permissions' } }));
+                return;
+              }
+
+              const { permissions, locks } = payload;
+              const updatedRoom = await this.roomService.updateRoomPermissions(clientSession.roomId, {
+                ...permissions,
+                locks: locks || permissions?.locks
+              });
+
+              // Re-evaluate permissions for all currently connected participants in the room
+              const roomClients = this.rooms.get(clientSession.roomId);
+              if (roomClients) {
+                for (const [pId, client] of roomClients.entries()) {
+                  const effectiveSet = resolveEffectivePermissions(
+                    client.participant.role,
+                    pId,
+                    updatedRoom.permissions
+                  );
+                  client.participant.permissions = Array.from(effectiveSet);
+                  // Notify client of their new effective permissions
+                  client.ws.send(JSON.stringify({
+                    event: NexusEvents.PERMISSIONS_UPDATED,
+                    payload: {
+                      participantId: pId,
+                      permissions: client.participant.permissions,
+                      locks: updatedRoom.permissions?.locks
+                    }
+                  }));
+
+                  // If microphones were locked globally, force mute audio
+                  if (updatedRoom.permissions?.locks?.lockMicrophones && client.participant.role !== 'host') {
+                    await this.db.updateParticipant(clientSession.roomId, pId, { isAudioMuted: true });
+                    client.participant.isAudioMuted = true;
+                  }
+
+                  // If cameras were locked globally, force mute video
+                  if (updatedRoom.permissions?.locks?.lockCameras && client.participant.role !== 'host') {
+                    await this.db.updateParticipant(clientSession.roomId, pId, { isVideoMuted: true });
+                    client.participant.isVideoMuted = true;
+                  }
+                }
+              }
+
+              this.broadcastToRoom(clientSession.roomId, NexusEvents.LOCKS_CHANGED, {
+                locks: updatedRoom.permissions?.locks
+              });
+              break;
+            }
+
             case NexusEvents.BREAKOUT_CREATE: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host' && clientSession.participant.role !== 'moderator') {
-                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized' } }));
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.CREATE_BREAKOUT, room?.permissions)) {
+                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to create breakout rooms' } }));
                 return;
               }
 
@@ -255,6 +358,12 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.BREAKOUT_JOIN: {
               if (!clientSession) return;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.JOIN_BREAKOUT, room?.permissions)) {
+                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to join breakout rooms' } }));
+                return;
+              }
+
               const { breakoutRoomId } = payload;
               const updatedBreakout = await this.breakoutService.assignParticipant(breakoutRoomId, clientSession.participant.id);
               await this.db.updateParticipant(clientSession.roomId, clientSession.participant.id, {
@@ -278,7 +387,8 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.BREAKOUT_BROADCAST: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host' && clientSession.participant.role !== 'moderator') {
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.BROADCAST_BREAKOUT, room?.permissions)) {
                 return;
               }
               // Host announcement sent across all breakout rooms
@@ -291,7 +401,8 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.RECORDING_START: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host' && clientSession.participant.role !== 'moderator') {
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.START_RECORDING, room?.permissions)) {
                 ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to start recording' } }));
                 return;
               }
@@ -302,7 +413,8 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.RECORDING_STOP: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host' && clientSession.participant.role !== 'moderator') {
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.STOP_RECORDING, room?.permissions)) {
                 ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to stop recording' } }));
                 return;
               }
@@ -318,8 +430,9 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.BROADCAST_START: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host') {
-                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized' } }));
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.START_BROADCAST, room?.permissions)) {
+                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Unauthorized to start broadcasting' } }));
                 return;
               }
               const b = await this.broadcastService.startBroadcast(clientSession.roomId, payload.streamUrl, payload.streamKey);
@@ -329,7 +442,8 @@ export class WebSocketSignalingServer {
 
             case NexusEvents.BROADCAST_STOP: {
               if (!clientSession) return;
-              if (clientSession.participant.role !== 'host') return;
+              const room = await this.roomService.getRoom(clientSession.roomId);
+              if (!this.hasPermission(clientSession, RoomPermission.STOP_BROADCAST, room?.permissions)) return;
               const b = await this.broadcastService.stopBroadcast(clientSession.roomId);
               this.broadcastToRoom(clientSession.roomId, NexusEvents.BROADCAST_STATE_CHANGED, b);
               break;
@@ -388,5 +502,14 @@ export class WebSocketSignalingServer {
   private getParticipantSession(roomId: string, participantId: string): ClientConnection | undefined {
     const roomClients = this.rooms.get(roomId);
     return roomClients?.get(participantId);
+  }
+
+  private hasPermission(client: ClientConnection, permission: RoomPermission, roomPermissions?: RoomPermissionsConfig): boolean {
+    const effective = resolveEffectivePermissions(
+      client.participant.role,
+      client.participant.id,
+      roomPermissions
+    );
+    return effective.has(permission);
   }
 }

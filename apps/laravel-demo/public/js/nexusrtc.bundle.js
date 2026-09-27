@@ -75,6 +75,9 @@ var NexusRTC = (() => {
         NexusEvents7["MODERATE_PARTICIPANT"] = "nexus:moderate_participant";
         NexusEvents7["PARTICIPANT_MODERATED"] = "nexus:participant_moderated";
         NexusEvents7["ROOM_MUTED_ALL"] = "nexus:room_muted_all";
+        NexusEvents7["UPDATE_PERMISSIONS"] = "nexus:update_permissions";
+        NexusEvents7["PERMISSIONS_UPDATED"] = "nexus:permissions_updated";
+        NexusEvents7["LOCKS_CHANGED"] = "nexus:locks_changed";
         NexusEvents7["CHAT_SEND"] = "nexus:chat_send";
         NexusEvents7["CHAT_RECEIVED"] = "nexus:chat_received";
         NexusEvents7["RECORDING_START"] = "nexus:recording_start";
@@ -91,6 +94,108 @@ var NexusRTC = (() => {
         NexusEvents7["BROADCAST_STOP"] = "nexus:broadcast_stop";
         NexusEvents7["BROADCAST_STATE_CHANGED"] = "nexus:broadcast_state_changed";
       })(NexusEvents6 || (exports.NexusEvents = NexusEvents6 = {}));
+    }
+  });
+
+  // packages/core/dist/permissions.js
+  var require_permissions = __commonJS({
+    "packages/core/dist/permissions.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.DEFAULT_ROLE_PERMISSIONS = exports.RoomPermission = void 0;
+      exports.resolveEffectivePermissions = resolveEffectivePermissions;
+      var RoomPermission2;
+      (function(RoomPermission3) {
+        RoomPermission3["SEND_AUDIO"] = "media:send_audio";
+        RoomPermission3["SEND_VIDEO"] = "media:send_video";
+        RoomPermission3["SHARE_SCREEN"] = "media:share_screen";
+        RoomPermission3["SEND_CHAT"] = "chat:send";
+        RoomPermission3["SEND_PRIVATE_CHAT"] = "chat:send_private";
+        RoomPermission3["RAISE_HAND"] = "interaction:raise_hand";
+        RoomPermission3["CREATE_BREAKOUT"] = "breakout:create";
+        RoomPermission3["JOIN_BREAKOUT"] = "breakout:join";
+        RoomPermission3["BROADCAST_BREAKOUT"] = "breakout:broadcast";
+        RoomPermission3["START_RECORDING"] = "session:start_recording";
+        RoomPermission3["STOP_RECORDING"] = "session:stop_recording";
+        RoomPermission3["START_BROADCAST"] = "session:start_broadcast";
+        RoomPermission3["STOP_BROADCAST"] = "session:stop_broadcast";
+        RoomPermission3["MUTE_OTHERS"] = "moderation:mute_others";
+        RoomPermission3["KICK_PARTICIPANTS"] = "moderation:kick_participants";
+        RoomPermission3["UPDATE_ROOM_PERMISSIONS"] = "session:update_permissions";
+        RoomPermission3["MANAGE_PARTICIPANTS"] = "moderation:manage_participants";
+      })(RoomPermission2 || (exports.RoomPermission = RoomPermission2 = {}));
+      exports.DEFAULT_ROLE_PERMISSIONS = {
+        host: [
+          RoomPermission2.SEND_AUDIO,
+          RoomPermission2.SEND_VIDEO,
+          RoomPermission2.SHARE_SCREEN,
+          RoomPermission2.SEND_CHAT,
+          RoomPermission2.SEND_PRIVATE_CHAT,
+          RoomPermission2.RAISE_HAND,
+          RoomPermission2.CREATE_BREAKOUT,
+          RoomPermission2.JOIN_BREAKOUT,
+          RoomPermission2.BROADCAST_BREAKOUT,
+          RoomPermission2.START_RECORDING,
+          RoomPermission2.STOP_RECORDING,
+          RoomPermission2.START_BROADCAST,
+          RoomPermission2.STOP_BROADCAST,
+          RoomPermission2.MUTE_OTHERS,
+          RoomPermission2.KICK_PARTICIPANTS,
+          RoomPermission2.UPDATE_ROOM_PERMISSIONS,
+          RoomPermission2.MANAGE_PARTICIPANTS
+        ],
+        moderator: [
+          RoomPermission2.SEND_AUDIO,
+          RoomPermission2.SEND_VIDEO,
+          RoomPermission2.SHARE_SCREEN,
+          RoomPermission2.SEND_CHAT,
+          RoomPermission2.SEND_PRIVATE_CHAT,
+          RoomPermission2.RAISE_HAND,
+          RoomPermission2.CREATE_BREAKOUT,
+          RoomPermission2.JOIN_BREAKOUT,
+          RoomPermission2.BROADCAST_BREAKOUT,
+          RoomPermission2.START_RECORDING,
+          RoomPermission2.STOP_RECORDING,
+          RoomPermission2.MUTE_OTHERS,
+          RoomPermission2.KICK_PARTICIPANTS,
+          RoomPermission2.MANAGE_PARTICIPANTS
+        ],
+        participant: [
+          RoomPermission2.SEND_AUDIO,
+          RoomPermission2.SEND_VIDEO,
+          RoomPermission2.SHARE_SCREEN,
+          RoomPermission2.SEND_CHAT,
+          RoomPermission2.SEND_PRIVATE_CHAT,
+          RoomPermission2.RAISE_HAND,
+          RoomPermission2.JOIN_BREAKOUT
+        ],
+        viewer: [
+          RoomPermission2.RAISE_HAND
+        ]
+      };
+      function resolveEffectivePermissions(role, participantId, config) {
+        if (participantId && config?.participantOverrides?.[participantId]) {
+          return new Set(config.participantOverrides[participantId]);
+        }
+        const rolePerms = config?.roles?.[role] || exports.DEFAULT_ROLE_PERMISSIONS[role] || [];
+        const effective = new Set(rolePerms);
+        if (role === "host") {
+          return effective;
+        }
+        if (config?.locks) {
+          if (config.locks.lockMicrophones)
+            effective.delete(RoomPermission2.SEND_AUDIO);
+          if (config.locks.lockCameras)
+            effective.delete(RoomPermission2.SEND_VIDEO);
+          if (config.locks.lockScreenshare)
+            effective.delete(RoomPermission2.SHARE_SCREEN);
+          if (config.locks.lockChat)
+            effective.delete(RoomPermission2.SEND_CHAT);
+          if (config.locks.lockPrivateChat)
+            effective.delete(RoomPermission2.SEND_PRIVATE_CHAT);
+        }
+        return effective;
+      }
     }
   });
 
@@ -118,6 +223,7 @@ var NexusRTC = (() => {
       __exportStar(require_types(), exports);
       __exportStar(require_interfaces(), exports);
       __exportStar(require_events(), exports);
+      __exportStar(require_permissions(), exports);
     }
   });
 
@@ -129,7 +235,8 @@ var NexusRTC = (() => {
     EventEmitter: () => EventEmitter,
     MediaManager: () => MediaManager,
     NexusClient: () => NexusClient,
-    NexusEvents: () => import_core5.NexusEvents
+    NexusEvents: () => import_core5.NexusEvents,
+    RoomPermission: () => import_core5.RoomPermission
   });
 
   // packages/client/src/EventEmitter.ts
@@ -275,11 +382,33 @@ var NexusRTC = (() => {
         this.emit("audioMuteChanged", this.isAudioMuted);
       }
     }
+    muteAudio(force = true) {
+      if (this.jitsiApi) {
+        if (force && !this.isAudioMuted) {
+          this.jitsiApi.executeCommand("toggleAudio");
+        }
+      } else {
+        this.isAudioMuted = force;
+        this.sendSocketMessage(import_core.NexusEvents.MEDIA_STATE_CHANGED, { isAudioMuted: this.isAudioMuted });
+        this.emit("audioMuteChanged", this.isAudioMuted);
+      }
+    }
     toggleVideo() {
       if (this.jitsiApi) {
         this.jitsiApi.executeCommand("toggleVideo");
       } else {
         this.isVideoMuted = !this.isVideoMuted;
+        this.sendSocketMessage(import_core.NexusEvents.MEDIA_STATE_CHANGED, { isVideoMuted: this.isVideoMuted });
+        this.emit("videoMuteChanged", this.isVideoMuted);
+      }
+    }
+    muteVideo(force = true) {
+      if (this.jitsiApi) {
+        if (force && !this.isVideoMuted) {
+          this.jitsiApi.executeCommand("toggleVideo");
+        }
+      } else {
+        this.isVideoMuted = force;
         this.sendSocketMessage(import_core.NexusEvents.MEDIA_STATE_CHANGED, { isVideoMuted: this.isVideoMuted });
         this.emit("videoMuteChanged", this.isVideoMuted);
       }
@@ -292,6 +421,26 @@ var NexusRTC = (() => {
         this.sendSocketMessage(import_core.NexusEvents.MEDIA_STATE_CHANGED, { isScreenSharing: this.isScreenSharing });
         this.emit("screenSharingChanged", this.isScreenSharing);
       }
+    }
+    stopScreenShare() {
+      if (this.jitsiApi) {
+        if (this.isScreenSharing) {
+          this.jitsiApi.executeCommand("toggleShareScreen");
+        }
+      } else {
+        this.isScreenSharing = false;
+        this.sendSocketMessage(import_core.NexusEvents.MEDIA_STATE_CHANGED, { isScreenSharing: false });
+        this.emit("screenSharingChanged", false);
+      }
+    }
+    getAudioMuted() {
+      return this.isAudioMuted;
+    }
+    getVideoMuted() {
+      return this.isVideoMuted;
+    }
+    getScreenSharing() {
+      return this.isScreenSharing;
     }
     dispose() {
       if (this.jitsiApi) {
@@ -547,6 +696,23 @@ var NexusRTC = (() => {
           this.emit("moderated", payload);
           break;
         }
+        case import_core4.NexusEvents.PERMISSIONS_UPDATED: {
+          const { participantId, permissions } = payload;
+          const self = this.getSelf();
+          if (self && self.id === participantId) {
+            self.permissions = permissions;
+          }
+          const p = this.participantsMap.get(participantId);
+          if (p) {
+            p.permissions = permissions;
+          }
+          this.emit("permissionsUpdated", payload);
+          break;
+        }
+        case import_core4.NexusEvents.LOCKS_CHANGED: {
+          this.emit("locksChanged", payload);
+          break;
+        }
         case import_core4.NexusEvents.ERROR: {
           this.emit("error", payload);
           break;
@@ -559,6 +725,19 @@ var NexusRTC = (() => {
       if (this.ws && this.ws.readyState === (this.ws.OPEN ?? 1)) {
         this.ws.send(JSON.stringify({ event, payload }));
       }
+    }
+    // Permissions & Capabilities
+    hasPermission(permission) {
+      const self = this.getSelf();
+      if (!self || !self.permissions) return false;
+      return self.permissions.includes(permission);
+    }
+    getEffectivePermissions() {
+      const self = this.getSelf();
+      return self?.permissions || [];
+    }
+    updateRoomPermissions(permissions, locks) {
+      this.send(import_core4.NexusEvents.UPDATE_PERMISSIONS, { permissions, locks });
     }
     // Raise Hand
     toggleRaiseHand() {

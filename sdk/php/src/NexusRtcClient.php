@@ -52,6 +52,22 @@ class NexusRtcClient
     }
 
     /**
+     * Get configured room permissions and role capabilities.
+     */
+    public function getRoomPermissions(string $roomIdOrSlug): array
+    {
+        return $this->request('GET', "/api/v1/rooms/{$roomIdOrSlug}/permissions");
+    }
+
+    /**
+     * Authoritatively update room permissions, role capabilities, or global locks.
+     */
+    public function updateRoomPermissions(string $roomIdOrSlug, array $permissionsConfig): array
+    {
+        return $this->request('PUT', "/api/v1/rooms/{$roomIdOrSlug}/permissions", $permissionsConfig);
+    }
+
+    /**
      * List active participants in a room.
      */
     public function listParticipants(string $roomId): array

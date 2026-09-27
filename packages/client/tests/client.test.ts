@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from '../src/EventEmitter.js';
 import { ChatManager } from '../src/ChatManager.js';
 import { BreakoutManager } from '../src/BreakoutManager.js';
+import { MediaManager } from '../src/MediaManager.js';
 import { NexusEvents } from '@nexusrtc/core';
 
 test('NexusRTC Client SDK Unit Tests', async (t) => {
@@ -64,5 +65,20 @@ test('NexusRTC Client SDK Unit Tests', async (t) => {
     assert.equal(dispatched.length, 2);
     assert.equal(dispatched[1].event, NexusEvents.BREAKOUT_JOIN);
     assert.equal(dispatched[1].payload.breakoutRoomId, 'room-sub-1');
+  });
+
+  await t.test('MediaManager mute commands and audio/video state controls', () => {
+    const dispatched: { event: any; payload: any }[] = [];
+    const media = new MediaManager((event: any, payload: any) => {
+      dispatched.push({ event, payload });
+    });
+
+    media.muteAudio(true);
+    assert.equal(media.getAudioMuted(), true);
+    assert.equal(dispatched[dispatched.length - 1].payload.isAudioMuted, true);
+
+    media.muteVideo(false);
+    assert.equal(media.getVideoMuted(), false);
+    assert.equal(dispatched[dispatched.length - 1].payload.isVideoMuted, false);
   });
 });

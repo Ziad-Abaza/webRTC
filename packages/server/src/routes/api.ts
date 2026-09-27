@@ -72,6 +72,29 @@ export function createApiRouter(
     }
   });
 
+  // Room Granular Permissions & Policy Control
+  router.get('/rooms/:idOrSlug/permissions', async (req: Request, res: Response) => {
+    try {
+      const room = await roomService.getRoom(req.params.idOrSlug);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      res.json(room.permissions || {});
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/rooms/:idOrSlug/permissions', auth, async (req: Request, res: Response) => {
+    try {
+      const room = await roomService.updateRoomPermissions(req.params.idOrSlug, req.body);
+      res.json({ success: true, permissions: room.permissions });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Generate join token for a participant (Called by backend like Laravel or client with secret)
   router.post('/rooms/:idOrSlug/token', auth, async (req: Request, res: Response) => {
     try {

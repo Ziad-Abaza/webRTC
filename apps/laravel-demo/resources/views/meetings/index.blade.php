@@ -57,9 +57,27 @@
                         <input type="checkbox" name="breakoutRoomsEnabled" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
                         <span>Breakout Rooms</span>
                     </label>
-                    <label class="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
-                        <input type="checkbox" checked disabled class="rounded border-slate-700 bg-slate-900 text-indigo-600 opacity-60">
-                        <span class="text-slate-400">Screen Sharing</span>
+                </div>
+            </div>
+
+            <div class="pt-2">
+                <span class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">Participant Default Permissions</span>
+                <div class="grid grid-cols-2 gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-700/60">
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowParticipantAudio" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Microphone / Audio</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowParticipantVideo" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Camera / Video</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowParticipantScreenshare" value="1" class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Screen Sharing</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowParticipantChat" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Send Chat Messages</span>
                     </label>
                 </div>
             </div>
