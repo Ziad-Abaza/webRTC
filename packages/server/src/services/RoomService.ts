@@ -20,6 +20,7 @@ export interface CreateRoomInput {
   description?: string;
   password?: string;
   hostId: string;
+  hostKey?: string;
   features?: Partial<Room['features']>;
   permissions?: RoomPermissionsConfig;
   mediaProvider?: string;
@@ -32,6 +33,7 @@ export interface GenerateTokenInput {
   email?: string;
   avatarUrl?: string;
   role?: ParticipantRole;
+  hostKey?: string; // Must match room.hostKey to obtain host/moderator privileges
   metadata?: Record<string, unknown>;
 }
 
@@ -52,6 +54,8 @@ export class RoomService {
       throw new Error(`Room with slug '${slug}' already exists and is active`);
     }
 
+    const hostKey = input.hostKey || uuidv4();
+
     const room: Room = {
       id: uuidv4(),
       slug,
@@ -60,6 +64,7 @@ export class RoomService {
       status: 'active',
       password: input.password,
       hostId: input.hostId,
+      hostKey,
       mediaProvider: input.mediaProvider || this.config.defaultMediaProvider,
       mediaConfig: {},
       features: {
@@ -143,7 +148,28 @@ export class RoomService {
     }
 
     const participantId = input.participantId || uuidv4();
-    const role: ParticipantRole = input.role || (input.participantId === room.hostId ? 'host' : 'participant');
+    
+    // Authoritative role derivation:
+    // A participant can ONLY be granted 'host' or 'moderator' role if:
+    // 1. Their participantId matches room.hostId, OR
+    // 2. A valid hostKey matching room.hostKey is provided.
+    // Otherwise, any requested host/moderator role is rejected or downgraded to participant.
+    let role: ParticipantRole = 'participant';
+    const requestedRole = input.role || (input.participantId === room.hostId ? 'host' : 'participant');
+
+    if (requestedRole === 'host' || requestedRole === 'moderator') {
+      const isHostById = Boolean(room.hostId && input.participantId && input.participantId === room.hostId);
+      const isHostByKey = Boolean(room.hostKey && input.hostKey && input.hostKey === room.hostKey);
+
+      if (isHostById || isHostByKey) {
+        role = requestedRole;
+      } else {
+        // Demote to standard participant - untrusted callers cannot claim host/moderator role
+        role = 'participant';
+      }
+    } else {
+      role = requestedRole;
+    }
 
     // Compute authoritatively resolved effective permissions for this participant
     const effectiveSet = resolveEffectivePermissions(role, participantId, room.permissions);

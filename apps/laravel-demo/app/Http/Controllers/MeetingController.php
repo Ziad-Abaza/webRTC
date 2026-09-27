@@ -70,10 +70,17 @@ class MeetingController extends Controller
                 ]
             ]);
 
+            // Store host credentials securely in the user's server-side session
+            $request->session()->put("room_host_{$room->slug}", [
+                'hostId' => $room->hostId,
+                'hostKey' => $room->hostKey,
+                'hostName' => $validated['hostName'],
+            ]);
+            $request->session()->save();
+
             return redirect()->route('meetings.show', [
                 'slug' => $room->slug,
-                'name' => $validated['hostName'],
-                'role' => 'host'
+                'name' => $validated['hostName']
             ]);
         } catch (NexusRtcException $e) {
             return back()->withErrors(['error' => 'Failed to initialize meeting: ' . $e->getMessage()]);
@@ -86,18 +93,33 @@ class MeetingController extends Controller
     public function show(Request $request, string $slug)
     {
         $name = $request->query('name', 'Guest Participant');
-        $role = $request->query('role', 'participant');
 
         $room = NexusRTC::getRoom($slug);
         if (!$room) {
             abort(404, 'Meeting room not found or expired.');
         }
 
-        // Generate join token for participant
-        $tokenData = NexusRTC::generateJoinToken($slug, [
+        // Authoritatively check session to determine if the caller is the verified room host
+        $hostSession = $request->session()->get("room_host_{$slug}");
+        $isHost = is_array($hostSession) && !empty($hostSession['hostKey']);
+
+        // Build token request:
+        // Host role is ONLY requested if backed by the verified hostKey from session.
+        // Invited regular guests NEVER receive host privileges, even if they manipulate query parameters or payload.
+        $tokenPayload = [
             'name' => $name,
-            'role' => in_array($role, ['host', 'moderator']) ? $role : 'participant',
-        ]);
+        ];
+
+        if ($isHost) {
+            $tokenPayload['role'] = 'host';
+            $tokenPayload['participantId'] = $hostSession['hostId'];
+            $tokenPayload['hostKey'] = $hostSession['hostKey'];
+        } else {
+            $tokenPayload['role'] = 'participant';
+        }
+
+        // Generate authoritative join token from NexusRTC engine
+        $tokenData = NexusRTC::generateJoinToken($slug, $tokenPayload);
 
         return view('meetings.room', [
             'room' => $room,

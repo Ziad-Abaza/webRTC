@@ -40,6 +40,7 @@ export interface Room {
   status: RoomStatus;
   password?: string;
   hostId: string;
+  hostKey?: string; // Secret key for authoritative host actions and token verification
   features: RoomFeatures;
   permissions?: RoomPermissionsConfig;
   mediaProvider: string; // e.g. 'jitsi', 'native-sfu'

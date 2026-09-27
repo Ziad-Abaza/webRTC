@@ -44,6 +44,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
         status TEXT NOT NULL,
         password TEXT,
         hostId TEXT NOT NULL,
+        hostKey TEXT,
         features TEXT NOT NULL,
         permissions TEXT,
         mediaProvider TEXT NOT NULL,
@@ -135,6 +136,11 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       // Column may already exist
     }
     try {
+      this.db.exec(`ALTER TABLE rooms ADD COLUMN hostKey TEXT;`);
+    } catch {
+      // Column may already exist
+    }
+    try {
       this.db.exec(`ALTER TABLE participants ADD COLUMN permissions TEXT;`);
     } catch {
       // Column may already exist
@@ -151,9 +157,9 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
   async createRoom(room: Room): Promise<Room> {
     const stmt = this.db.prepare(`
       INSERT INTO rooms (
-        id, slug, title, description, status, password, hostId,
+        id, slug, title, description, status, password, hostId, hostKey,
         features, permissions, mediaProvider, mediaConfig, createdAt, updatedAt, closedAt, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -164,6 +170,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       room.status,
       room.password || null,
       room.hostId,
+      room.hostKey || null,
       JSON.stringify(room.features),
       room.permissions ? JSON.stringify(room.permissions) : null,
       room.mediaProvider,
@@ -199,7 +206,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
 
     const stmt = this.db.prepare(`
       UPDATE rooms SET
-        title = ?, description = ?, status = ?, password = ?, hostId = ?,
+        title = ?, description = ?, status = ?, password = ?, hostId = ?, hostKey = ?,
         features = ?, permissions = ?, mediaProvider = ?, mediaConfig = ?, updatedAt = ?, closedAt = ?, metadata = ?
       WHERE id = ?
     `);
@@ -210,6 +217,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       updated.status,
       updated.password || null,
       updated.hostId,
+      updated.hostKey || null,
       JSON.stringify(updated.features),
       updated.permissions ? JSON.stringify(updated.permissions) : null,
       updated.mediaProvider,
@@ -556,6 +564,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       status: row.status,
       password: row.password || undefined,
       hostId: row.hostId,
+      hostKey: row.hostKey || undefined,
       features: JSON.parse(row.features),
       permissions: row.permissions ? JSON.parse(row.permissions) : undefined,
       mediaProvider: row.mediaProvider,

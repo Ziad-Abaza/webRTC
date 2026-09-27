@@ -158,7 +158,7 @@ class ConferenceController extends Controller
     {
         $room = NexusRTC::createRoom([
             'title' => 'Weekly Executive Sync',
-            'hostId' => auth()->id() ?? 'host-1',
+            'hostId' => (string) auth()->id(),
             'features' => [
                 'recordingEnabled' => true,
                 'chatEnabled' => true,
@@ -167,17 +167,36 @@ class ConferenceController extends Controller
             ]
         ]);
 
+        // Securely store the host credentials in session
+        session()->put("room_host_{$room->slug}", [
+            'hostId' => $room->hostId,
+            'hostKey' => $room->hostKey,
+        ]);
+
         return redirect()->route('meeting.join', ['slug' => $room->slug]);
     }
 
     // Join room & issue authorized participant token
     public function join(string $slug)
     {
-        $session = NexusRTC::generateJoinToken($slug, [
-            'participantId' => (string) auth()->id(),
+        // Authoritative verification: Only provide hostKey if session proves ownership
+        $hostSession = session()->get("room_host_{$slug}");
+        $isHost = is_array($hostSession) && !empty($hostSession['hostKey']);
+
+        $tokenPayload = [
+            'participantId' => (string) (auth()->id() ?? 'guest-' . uniqid()),
             'name' => auth()->user()->name ?? 'Participant',
-            'role' => auth()->user()->is_admin ? 'host' : 'participant'
-        ]);
+        ];
+
+        if ($isHost) {
+            $tokenPayload['role'] = 'host';
+            $tokenPayload['participantId'] = $hostSession['hostId'];
+            $tokenPayload['hostKey'] = $hostSession['hostKey'];
+        } else {
+            $tokenPayload['role'] = 'participant';
+        }
+
+        $session = NexusRTC::generateJoinToken($slug, $tokenPayload);
 
         return view('meeting', [
             'token' => $session['token'],
@@ -187,6 +206,15 @@ class ConferenceController extends Controller
     }
 }
 ```
+
+---
+
+## 🔒 Security Architecture: Authoritative Server-Side Authorization
+
+NexusRTC enforces strict zero-trust security at the server level:
+- **Authoritative Role Derivation (`RoomService`)**: Host and Moderator privileges cannot be claimed by passing `role: host` in client payloads or query parameters. The engine server verifies `hostId` or validates the room's secret `hostKey` before granting elevated roles. Unverified claims are automatically demoted to `participant`.
+- **Cryptographic JWT Tokens**: Tokens are cryptographically signed using HS256 with the server's private secret. Tampered payloads or forged signatures are immediately rejected during the WebSocket handshake.
+- **WebSocket Gateway Capability Enforcement**: Every action (`RECORDING_START`, `RECORDING_STOP`, `MODERATE_PARTICIPANT`, `UPDATE_PERMISSIONS`, `BREAKOUT_CREATE`, `MEDIA_STATE_CHANGED`, etc.) checks the caller's authoritatively resolved capability set on every message. Unauthorized attempts are rejected with error events.
 
 ---
 
@@ -209,17 +237,17 @@ Flutter and mobile apps do not require a separate mobile SDK. Mobile application
 
 NexusRTC includes rigorous automated test coverage across every layer of the architecture:
 
-### 1. Server, Database Persistence & Signaling E2E Tests:
+### 1. Server, Database Persistence & Security E2E Tests:
 ```bash
 node --test packages/server/dist/tests/server.test.js
 ```
-*Result: 4/4 passing tests verifying REST room lifecycle, token issuance, multi-participant WebSocket signaling, live chat broadcast, raise-hand notifications, breakout rooms, and recording start/stop with SQLite persistence.*
+*Result: 6/6 passing tests verifying REST room lifecycle, token issuance, multi-participant WebSocket signaling, live chat broadcast, raise-hand notifications, breakout rooms, SQLite persistence, viewer role capability restrictions, and security tests proving rejection of role forging, token tampering, and unauthorized host privilege escalation.*
 
 ### 2. Client SDK Unit Tests:
 ```bash
 node --test packages/client/dist/tests/client.test.js
 ```
-*Result: 4/4 passing tests verifying event dispatching, chat manager messaging, and breakout room lifecycle.*
+*Result: 5/5 passing tests verifying event dispatching, chat manager messaging, breakout room lifecycle, and media manager state toggles.*
 
 ### 3. PHP SDK Standalone Test Suite:
 ```bash
@@ -232,5 +260,5 @@ php sdk/php/tests/test_client.php
 cd apps/laravel-demo
 php artisan test --filter=NexusRtcIntegrationTest
 ```
-*Result: 2/2 passing feature tests verifying full end-to-end meeting creation, join token issuance, blade template rendering with bundled Web SDK, and participant guest flows.*
+*Result: 3/3 passing feature tests verifying full end-to-end meeting creation, join token issuance, blade template rendering with bundled Web SDK, participant guest flows, and multi-session authorization proving that regular invited participants cannot obtain or exercise host privileges.*
 

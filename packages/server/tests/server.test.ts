@@ -354,4 +354,200 @@ test('NexusRTC Server E2E Flow', async (t) => {
 
     viewerWs.close();
   });
+
+  await t.test('Security & Authoritative Authorization: Role Forging, Token Tampering and Host Privilege Rejection', async (t2) => {
+    // 1. Create a secure meeting with hostId and hostKey
+    const createRes = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        title: 'Executive Boardroom',
+        hostId: 'real-host-123'
+      })
+    });
+    assert.equal(createRes.status, 201);
+    const room = await createRes.json();
+    assert.ok(room.hostKey);
+
+    // 2. An invited guest attempts to claim role: 'host' without the secret hostKey
+    const guestExploitRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'guest-attacker',
+        name: 'Evil Attacker',
+        role: 'host' // Maliciously forged role parameter
+      })
+    });
+    assert.equal(guestExploitRes.status, 200);
+    const guestExploitData = await guestExploitRes.json();
+    // Must be demoted to participant! Host role MUST NOT be granted!
+    assert.equal(guestExploitData.participant.role, 'participant');
+
+    // 3. Legitimate host token generation using hostKey
+    const legitHostRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'host-session-1',
+        name: 'True Host',
+        role: 'host',
+        hostKey: room.hostKey
+      })
+    });
+    assert.equal(legitHostRes.status, 200);
+    const legitHostData = await legitHostRes.json();
+    assert.equal(legitHostData.participant.role, 'host');
+
+    // 4. WebSocket connection test for both sessions
+    const wsUrl = `ws://localhost:${port}/ws`;
+    const hostWs = new WebSocket(wsUrl);
+    const guestWs = new WebSocket(wsUrl);
+
+    await Promise.all([
+      new Promise((resolve) => hostWs.on('open', resolve)),
+      new Promise((resolve) => guestWs.on('open', resolve))
+    ]);
+
+    // Host joins
+    const hostJoinedPromise = new Promise<any>((resolve) => {
+      hostWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    hostWs.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: legitHostData.token } }));
+    await hostJoinedPromise;
+
+    // Guest joins
+    const guestJoinedPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    guestWs.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: guestExploitData.token } }));
+    await guestJoinedPromise;
+
+    // Test A: Guest attempts to START RECORDING -> Server MUST reject with unauthorized
+    const recErrorPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    guestWs.send(JSON.stringify({
+      event: NexusEvents.RECORDING_START,
+      payload: {}
+    }));
+
+    const recError = await recErrorPromise;
+    assert.match(recError.message, /Unauthorized to start recording/);
+
+    // Test B: Guest attempts to KICK the host -> Server MUST reject with unauthorized
+    const kickErrorPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    guestWs.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'host-session-1',
+        action: 'kick'
+      }
+    }));
+
+    const kickError = await kickErrorPromise;
+    assert.match(kickError.message, /Unauthorized to kick participants/);
+
+    // Test C: Guest attempts to MUTE the host -> Server MUST reject with unauthorized
+    const muteErrorPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    guestWs.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'host-session-1',
+        action: 'mute-audio'
+      }
+    }));
+
+    const muteError = await muteErrorPromise;
+    assert.match(muteError.message, /Unauthorized to mute other participants/);
+
+    // Test D: Guest attempts to CREATE BREAKOUT ROOM -> Server MUST reject with unauthorized
+    const breakoutErrorPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    guestWs.send(JSON.stringify({
+      event: NexusEvents.BREAKOUT_CREATE,
+      payload: { name: 'Illegal Breakout', durationMinutes: 10 }
+    }));
+
+    const breakoutError = await breakoutErrorPromise;
+    assert.match(breakoutError.message, /Unauthorized to create breakout rooms/);
+
+    // Test E: Guest attempts to UPDATE ROOM PERMISSIONS -> Server MUST reject with unauthorized
+    const permErrorPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    guestWs.send(JSON.stringify({
+      event: NexusEvents.UPDATE_PERMISSIONS,
+      payload: {
+        locks: { lockMicrophones: true }
+      }
+    }));
+
+    const permError = await permErrorPromise;
+    assert.match(permError.message, /Unauthorized to update room permissions/);
+
+    // Test F: Token Tampering / Invalid Signature -> Server terminates connection immediately
+    const tamperedWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => tamperedWs.on('open', resolve));
+
+    const tamperedErrorPromise = new Promise<any>((resolve) => {
+      tamperedWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    // Provide a forged JWT with invalid signature
+    tamperedWs.send(JSON.stringify({
+      event: NexusEvents.JOIN,
+      payload: { token: guestExploitData.token.slice(0, -5) + 'fake0' }
+    }));
+
+    const tamperedError = await tamperedErrorPromise;
+    assert.match(tamperedError.message, /Invalid or expired token/);
+
+    hostWs.close();
+    guestWs.close();
+    tamperedWs.close();
+  });
 });
