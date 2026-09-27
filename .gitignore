@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+vendor/
+packages/*/node_modules/
+
+# Build artifacts
+dist/
+packages/*/dist/
+*.tsbuildinfo
+packages/*/*.tsbuildinfo
+
+# Environment & credentials
+.env
+.env.backup
+.env.production
+storage/*.sqlite
+storage/*.sqlite-wal
+storage/*.sqlite-shm
+storage/recordings/*
+!storage/recordings/.gitkeep
+
+# Laravel artifacts
+apps/laravel-demo/vendor/
+apps/laravel-demo/.env
+apps/laravel-demo/storage/*.key
+apps/laravel-demo/storage/framework/cache/*
+apps/laravel-demo/storage/framework/sessions/*
+apps/laravel-demo/storage/framework/views/*
+apps/laravel-demo/storage/logs/*
+!apps/laravel-demo/storage/logs/.gitkeep
+apps/laravel-demo/database/*.sqlite
+apps/laravel-demo/node_modules/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,14 @@
+{
+  "name": "@nexusrtc/core",
+  "version": "1.0.0",
+  "description": "Core types, interfaces, and contracts for NexusRTC",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests for core\""
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "nexusrtc/client",
+  "description": "NexusRTC SDK and Laravel Integration for WebRTC Communication Engine",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "NexusRTC Architect",
+      "email": "architect@nexusrtc.dev"
+    }
+  ],
+  "require": {
+    "php": ">=8.1",
+    "ext-json": "*",
+    "ext-curl": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "NexusRTC\\Client\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "NexusRTC\\Client\\Laravel\\NexusRtcServiceProvider"
+      ],
+      "aliases": {
+        "NexusRTC": "NexusRTC\\Client\\Laravel\\Facades\\NexusRTC"
+      }
+    }
+  }
+}
