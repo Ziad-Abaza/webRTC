@@ -92,7 +92,11 @@ class MeetingController extends Controller
      */
     public function show(Request $request, string $slug)
     {
-        $name = $request->query('name', 'Guest Participant');
+        $rawName = $request->query('name', 'Guest Participant');
+        $name = trim(strip_tags((string) $rawName)) ?: 'Guest Participant';
+        if (strlen($name) > 60) {
+            $name = substr($name, 0, 60);
+        }
 
         $room = NexusRTC::getRoom($slug);
         if (!$room) {

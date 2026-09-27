@@ -20,8 +20,13 @@ export function createServer(customDb?: IDatabaseAdapter) {
   const app = express();
   const server = http.createServer(app);
 
-  app.use(cors());
-  app.use(express.json());
+  app.use(cors({
+    origin: config.corsOrigin,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+  }));
+  app.use(express.json({ limit: '1mb' }));
 
   // Pluggable Providers initialization
   const db: IDatabaseAdapter = customDb || (
@@ -53,6 +58,19 @@ export function createServer(customDb?: IDatabaseAdapter) {
     storage
   );
   app.use('/api/v1', apiRouter);
+
+  // 404 Handler for API
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+  });
+
+  // Global Error Handler - Prevents internal stack trace leakage
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[NexusRTC Internal Error]', err);
+    res.status(err.status || 500).json({
+      error: err.message && process.env.NODE_ENV !== 'production' ? err.message : 'Internal Server Error'
+    });
+  });
 
   // WebSocket Signaling
   const wss = new WebSocketServer({ server, path: '/ws' });

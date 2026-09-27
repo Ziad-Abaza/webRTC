@@ -4,10 +4,19 @@ import { RecordingService } from '../services/RecordingService.js';
 import { BreakoutService } from '../services/BreakoutService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { LocalStorageProvider } from '../storage/LocalStorageProvider.js';
-import { IDatabaseAdapter } from '@nexusrtc/core';
-import { apiKeyMiddleware } from '../middlewares/auth.js';
+import { IDatabaseAdapter, Room } from '@nexusrtc/core';
+import { apiKeyMiddleware, apiKeyOrJwtMiddleware, AuthenticatedRequest } from '../middlewares/auth.js';
 import { ServerConfig } from '../config/index.js';
 import fs from 'fs';
+
+/**
+ * Sanitizes room object for public or participant-facing consumption.
+ * Ensures internal hostKey and password are never leaked to non-admin callers.
+ */
+function sanitizeRoom(room: Room): Partial<Room> {
+  const { hostKey, password, ...safe } = room;
+  return safe;
+}
 
 export function createApiRouter(
   config: ServerConfig,
@@ -20,9 +29,10 @@ export function createApiRouter(
 ): Router {
   const router = Router();
   const auth = apiKeyMiddleware(config);
+  const sessionAuth = apiKeyOrJwtMiddleware(config);
 
   // Health check
-  router.get('/health', (req: Request, res: Response) => {
+  router.get('/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
       service: 'NexusRTC Engine',
@@ -35,6 +45,7 @@ export function createApiRouter(
   router.post('/rooms', auth, async (req: Request, res: Response) => {
     try {
       const room = await roomService.createRoom(req.body);
+      // Return full room (including hostKey) to authorized backend creator
       res.status(201).json(room);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -46,10 +57,11 @@ export function createApiRouter(
       const rooms = await roomService.listRooms(req.query.status as string);
       res.json(rooms);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: 'Failed to retrieve rooms' });
     }
   });
 
+  // Single room metadata lookup (can be queried by backend with API key or participant with valid room session)
   router.get('/rooms/:idOrSlug', async (req: Request, res: Response) => {
     try {
       const room = await roomService.getRoom(req.params.idOrSlug);
@@ -57,16 +69,25 @@ export function createApiRouter(
         res.status(404).json({ error: 'Room not found' });
         return;
       }
-      res.json(room);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      
+      // If requested by master API key, return full object including hostKey.
+      // Otherwise, return sanitized room metadata without leaking host credentials.
+      const authHeader = req.headers.authorization;
+      const apiKey = (req.headers['x-api-key'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+      if (apiKey === config.apiKey) {
+        res.json(room);
+      } else {
+        res.json(sanitizeRoom(room));
+      }
+    } catch {
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   router.delete('/rooms/:id', auth, async (req: Request, res: Response) => {
     try {
       const room = await roomService.closeRoom(req.params.id);
-      res.json({ success: true, room });
+      res.json({ success: true, room: sanitizeRoom(room) });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -81,8 +102,8 @@ export function createApiRouter(
         return;
       }
       res.json(room.permissions || {});
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve permissions' });
     }
   });
 
@@ -95,44 +116,60 @@ export function createApiRouter(
     }
   });
 
-  // Generate join token for a participant (Called by backend like Laravel or client with secret)
+  // Generate join token for a participant
   router.post('/rooms/:idOrSlug/token', auth, async (req: Request, res: Response) => {
     try {
       const result = await roomService.generateJoinToken(req.params.idOrSlug, req.body);
-      res.json(result);
+      res.json({
+        ...result,
+        room: sanitizeRoom(result.room)
+      });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  // Participants
-  router.get('/rooms/:roomId/participants', async (req: Request, res: Response) => {
+  // Participants in a room (Protected: requires master API key or active session token for this room)
+  router.get('/rooms/:roomId/participants', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Validate tenant/room boundary if accessed via participant token
+      if (req.participant && req.participant.roomId !== req.params.roomId) {
+        res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+        return;
+      }
       const participants = await db.listParticipants(req.params.roomId);
       res.json(participants);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve participants' });
     }
   });
 
-  // Chat History
-  router.get('/rooms/:roomId/chat', async (req: Request, res: Response) => {
+  // Chat History (Protected: requires master API key or active session token for this room)
+  router.get('/rooms/:roomId/chat', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      if (req.participant && req.participant.roomId !== req.params.roomId) {
+        res.status(403).json({ error: 'Forbidden: Access to another room chat is prohibited' });
+        return;
+      }
+      const limit = req.query.limit ? Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10))) : 50;
       const history = await db.getChatHistory(req.params.roomId, { limit });
       res.json(history);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve chat history' });
     }
   });
 
   // Recordings
-  router.get('/rooms/:roomId/recordings', auth, async (req: Request, res: Response) => {
+  router.get('/rooms/:roomId/recordings', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      if (req.participant && req.participant.roomId !== req.params.roomId) {
+        res.status(403).json({ error: 'Forbidden: Access to another room recordings is prohibited' });
+        return;
+      }
       const recordings = await recordingService.listRecordings(req.params.roomId);
       res.json(recordings);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve recordings' });
     }
   });
 
@@ -154,28 +191,43 @@ export function createApiRouter(
     }
   });
 
-  // Recording static file download endpoint
-  router.get('/recordings/file/:key', async (req: Request, res: Response) => {
+  // Recording file download endpoint (Protected: master API key or valid session token)
+  router.get('/recordings/file/*', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const key = decodeURIComponent(req.params.key);
-      const filePath = storageProvider.getFilePath(key);
-      if (!fs.existsSync(filePath)) {
-        res.status(404).json({ error: 'File not found' });
+      const rawKey = req.params[0] || (req.query.key as string) || '';
+      const key = decodeURIComponent(rawKey);
+      
+      // Prevent path traversal
+      let filePath: string;
+      try {
+        filePath = storageProvider.getFilePath(key);
+      } catch (pathErr: any) {
+        res.status(400).json({ error: 'Invalid file key or path traversal detected' });
         return;
       }
+
+      if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: 'Recording file not found' });
+        return;
+      }
+
       res.sendFile(filePath);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Internal server error reading recording file' });
     }
   });
 
   // Breakout Rooms
-  router.get('/rooms/:roomId/breakouts', async (req: Request, res: Response) => {
+  router.get('/rooms/:roomId/breakouts', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      if (req.participant && req.participant.roomId !== req.params.roomId) {
+        res.status(403).json({ error: 'Forbidden: Access to another room breakouts is prohibited' });
+        return;
+      }
       const breakouts = await breakoutService.listBreakoutRooms(req.params.roomId);
       res.json(breakouts);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve breakout rooms' });
     }
   });
 

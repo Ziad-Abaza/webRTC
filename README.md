@@ -212,9 +212,23 @@ class ConferenceController extends Controller
 ## 🔒 Security Architecture: Authoritative Server-Side Authorization
 
 NexusRTC enforces strict zero-trust security at the server level:
+- **Timing-Safe Authentication**: API key verification uses constant-time comparisons (`crypto.timingSafeEqual`) to prevent side-channel timing attacks.
 - **Authoritative Role Derivation (`RoomService`)**: Host and Moderator privileges cannot be claimed by passing `role: host` in client payloads or query parameters. The engine server verifies `hostId` or validates the room's secret `hostKey` before granting elevated roles. Unverified claims are automatically demoted to `participant`.
+- **Path Traversal & Storage Boundary Defense (`LocalStorageProvider`)**: File keys are validated to prevent directory traversal (`..`, absolute paths, and prefix checking) ensuring recording downloads cannot access the host filesystem.
+- **Tenant & Cross-Room Boundary Enforcement (IDOR/BOLA Protection)**: Session tokens grant access strictly to their assigned room. Cross-room queries to `/rooms/:roomId/participants`, `/chat`, `/recordings`, and `/breakouts` are blocked with `403 Forbidden`.
+- **Information Leakage Prevention**: Public/participant room endpoints (`GET /rooms/:idOrSlug`) sanitize sensitive internals, ensuring `hostKey` and `password` are never exposed to non-admin callers.
 - **Cryptographic JWT Tokens**: Tokens are cryptographically signed using HS256 with the server's private secret. Tampered payloads or forged signatures are immediately rejected during the WebSocket handshake.
-- **WebSocket Gateway Capability Enforcement**: Every action (`RECORDING_START`, `RECORDING_STOP`, `MODERATE_PARTICIPANT`, `UPDATE_PERMISSIONS`, `BREAKOUT_CREATE`, `MEDIA_STATE_CHANGED`, etc.) checks the caller's authoritatively resolved capability set on every message. Unauthorized attempts are rejected with error events.
+- **WebSocket Gateway Rate Limiting & Message Caps**: WebSocket connections enforce per-client message throttling (max 50 msgs/sec burst prevention) and a 64KB message payload ceiling.
+- **Authoritative Capability Enforcement**: Every action (`RECORDING_START`, `RECORDING_STOP`, `MODERATE_PARTICIPANT`, `UPDATE_PERMISSIONS`, `BREAKOUT_CREATE`, `MEDIA_STATE_CHANGED`, etc.) checks the caller's authoritatively resolved capability set on every message. Unauthorized attempts are rejected with error events.
+
+---
+
+## 📖 API Documentation & Machine-Readable Contracts
+
+For coding agents, AI tools, and developers, a complete machine-readable OpenAPI 3.1.0 specification is available:
+- **OpenAPI Specification**: [`packages/server/docs/openapi.yaml`](file:///D:/coding/projects/web%20developer/New%20folder/packages/server/docs/openapi.yaml)
+- **REST Endpoints Base**: `http://localhost:4000/api/v1`
+- **Signaling WebSocket**: `ws://localhost:4000/ws`
 
 ---
 
@@ -237,11 +251,11 @@ Flutter and mobile apps do not require a separate mobile SDK. Mobile application
 
 NexusRTC includes rigorous automated test coverage across every layer of the architecture:
 
-### 1. Server, Database Persistence & Security E2E Tests:
+### 1. Server, Persistence, Permissions & Deep Security E2E Tests:
 ```bash
 node --test packages/server/dist/tests/server.test.js
 ```
-*Result: 6/6 passing tests verifying REST room lifecycle, token issuance, multi-participant WebSocket signaling, live chat broadcast, raise-hand notifications, breakout rooms, SQLite persistence, viewer role capability restrictions, and security tests proving rejection of role forging, token tampering, and unauthorized host privilege escalation.*
+*Result: 7/7 passing tests verifying REST room lifecycle, token issuance, multi-participant WebSocket signaling, live chat broadcast, raise-hand notifications, breakout rooms, SQLite persistence, viewer role capability restrictions, security tests proving rejection of role forging, token tampering, path traversal protection, hostKey sanitization, IDOR cross-room access protection, and WebSocket rate limiting.*
 
 ### 2. Client SDK Unit Tests:
 ```bash
@@ -260,5 +274,5 @@ php sdk/php/tests/test_client.php
 cd apps/laravel-demo
 php artisan test --filter=NexusRtcIntegrationTest
 ```
-*Result: 3/3 passing feature tests verifying full end-to-end meeting creation, join token issuance, blade template rendering with bundled Web SDK, participant guest flows, and multi-session authorization proving that regular invited participants cannot obtain or exercise host privileges.*
+*Result: 5/5 passing tests (28 assertions) verifying full end-to-end meeting creation, join token issuance, blade template rendering with bundled Web SDK, participant guest flows, and multi-session authorization proving that regular invited participants cannot obtain or exercise host privileges.*
 

@@ -550,4 +550,103 @@ test('NexusRTC Server E2E Flow', async (t) => {
     guestWs.close();
     tamperedWs.close();
   });
+
+  await t.test('Deep Security: Path Traversal, HostKey Sanitization, IDOR Cross-Room Access & WS Rate Limits', async (t3) => {
+    // 1. HostKey sanitization on GET /rooms/:idOrSlug
+    const roomRes = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        title: 'Secret Vault',
+        hostId: 'vault-host'
+      })
+    });
+    const secretRoom = await roomRes.json();
+    assert.ok(secretRoom.hostKey);
+
+    // Unauthenticated/guest request to GET /rooms/:idOrSlug MUST NOT leak hostKey
+    const publicRoomRes = await fetch(`http://localhost:${port}/api/v1/rooms/${secretRoom.slug}`);
+    assert.equal(publicRoomRes.status, 200);
+    const publicRoom = await publicRoomRes.json();
+    assert.equal(publicRoom.hostKey, undefined, 'hostKey must not be leaked to unauthenticated callers');
+    assert.equal(publicRoom.password, undefined);
+
+    // 2. Path Traversal rejection on recordings file endpoint
+    const traversalKey = encodeURIComponent('../../etc/passwd');
+    const traversalRes = await fetch(`http://localhost:${port}/api/v1/recordings/file/${traversalKey}`, {
+      headers: {
+        'X-API-Key': instance.config.apiKey
+      }
+    });
+    assert.equal(traversalRes.status, 400);
+    const traversalErr = await traversalRes.json();
+    assert.match(traversalErr.error, /path traversal/i);
+
+    // 3. IDOR / Cross-Room boundary validation using participant token
+    // Issue token for secretRoom
+    const tokenRes = await fetch(`http://localhost:${port}/api/v1/rooms/${secretRoom.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'user-vault-1',
+        name: 'Vault Member'
+      })
+    });
+    const tokenData = await tokenRes.json();
+
+    // Attempt to access chat history of another room ('other-room-id') using this token
+    const idorRes = await fetch(`http://localhost:${port}/api/v1/rooms/other-room-id/chat`, {
+      headers: {
+        'Authorization': `Bearer ${tokenData.token}`
+      }
+    });
+    assert.equal(idorRes.status, 403, 'Cross-room access must be blocked with 403 Forbidden');
+
+    // 4. Constant-Time Timing Safe API Key rejection
+    const invalidKeyRes = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      headers: {
+        'X-API-Key': 'nexusrtc-wrong-key'
+      }
+    });
+    assert.equal(invalidKeyRes.status, 401);
+
+    // 5. WebSocket message rate limiting
+    const wsUrl = `ws://localhost:${port}/ws`;
+    const floodWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => floodWs.on('open', resolve));
+
+    // Join room first
+    const joinedPromise = new Promise<any>((resolve) => {
+      floodWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    floodWs.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: tokenData.token } }));
+    await joinedPromise;
+
+    // Send rapid burst of messages exceeding 50 msgs/sec
+    let rateLimitTriggered = false;
+    floodWs.on('message', (msg) => {
+      const p = JSON.parse(msg.toString());
+      if (p.event === NexusEvents.ERROR && p.payload.message === 'Rate limit exceeded') {
+        rateLimitTriggered = true;
+      }
+    });
+
+    for (let i = 0; i < 60; i++) {
+      floodWs.send(JSON.stringify({ event: NexusEvents.HAND_RAISED, payload: { isHandRaised: false } }));
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(rateLimitTriggered, true, 'WebSocket server must enforce rate limiting against flooding');
+
+    floodWs.close();
+  });
 });

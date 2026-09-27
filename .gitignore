@@ -18,6 +18,8 @@ storage/*.sqlite-wal
 storage/*.sqlite-shm
 storage/recordings/*
 !storage/recordings/.gitkeep
+packages/server/storage/
+packages/*/storage/
 
 # Laravel artifacts
 apps/laravel-demo/vendor/

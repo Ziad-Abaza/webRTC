@@ -1,0 +1,709 @@
+openapi: 3.1.0
+info:
+  title: NexusRTC WebRTC Communication Engine API
+  version: 1.0.0
+  description: >
+    Production-grade, framework-agnostic WebRTC Communication Engine REST & WebSocket API specification.
+    Provides server-authoritative room lifecycle management, granular capability-based access control,
+    recording storage, live broadcasting, and breakout rooms.
+servers:
+  - url: http://localhost:4000/api/v1
+    description: Default local NexusRTC server instance
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Master server-to-server API key for backend services (e.g., Laravel, Node.js).
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Master API key or participant room session JWT token.
+
+  schemas:
+    RoomFeatures:
+      type: object
+      properties:
+        recordingEnabled:
+          type: boolean
+          default: true
+        chatEnabled:
+          type: boolean
+          default: true
+        screenShareEnabled:
+          type: boolean
+          default: true
+        raiseHandEnabled:
+          type: boolean
+          default: true
+        breakoutRoomsEnabled:
+          type: boolean
+          default: true
+        broadcastEnabled:
+          type: boolean
+          default: false
+        privateMessagingEnabled:
+          type: boolean
+          default: true
+
+    RolePermissions:
+      type: object
+      description: Granular permission matrix mapping roles (host, co-host, participant, viewer) to capability flags.
+      properties:
+        canPublishAudio:
+          type: boolean
+        canPublishVideo:
+          type: boolean
+        canShareScreen:
+          type: boolean
+        canSendChat:
+          type: boolean
+        canSendPrivateChat:
+          type: boolean
+        canRaiseHand:
+          type: boolean
+        canRecord:
+          type: boolean
+        canManageBreakouts:
+          type: boolean
+        canManageParticipants:
+          type: boolean
+        canBroadcast:
+          type: boolean
+        canEndRoom:
+          type: boolean
+        canMuteOthers:
+          type: boolean
+
+    RoomPermissions:
+      type: object
+      properties:
+        defaultRole:
+          type: string
+          example: participant
+        roles:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/RolePermissions'
+        participantOverrides:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/RolePermissions'
+
+    Room:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        slug:
+          type: string
+        hostId:
+          type: string
+        hostKey:
+          type: string
+          description: Private host key for claiming host ownership (omitted in public responses).
+        maxParticipants:
+          type: integer
+        isPrivate:
+          type: boolean
+        features:
+          $ref: '#/components/schemas/RoomFeatures'
+        permissions:
+          $ref: '#/components/schemas/RoomPermissions'
+        status:
+          type: string
+          enum: [created, active, ended]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Participant:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          example: participant
+        isHost:
+          type: boolean
+        permissions:
+          $ref: '#/components/schemas/RolePermissions'
+        isAudioMuted:
+          type: boolean
+        isVideoMuted:
+          type: boolean
+        isHandRaised:
+          type: boolean
+        isScreenSharing:
+          type: boolean
+        joinedAt:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        text:
+          type: string
+        timestamp:
+          type: integer
+        isPrivate:
+          type: boolean
+        targetParticipantId:
+          type: string
+          nullable: true
+
+    Recording:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        status:
+          type: string
+          enum: [starting, recording, stopped, uploading, completed, failed]
+        storageKey:
+          type: string
+        downloadUrl:
+          type: string
+        sizeBytes:
+          type: integer
+        durationSeconds:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BreakoutRoom:
+      type: object
+      properties:
+        id:
+          type: string
+        parentRoomId:
+          type: string
+        name:
+          type: string
+        participantIds:
+          type: array
+          items:
+            type: string
+        durationMinutes:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [active, closed]
+        createdAt:
+          type: string
+          format: date-time
+
+    LiveBroadcastConfig:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        streamUrl:
+          type: string
+        streamKey:
+          type: string
+        status:
+          type: string
+          enum: [idle, broadcasting, stopped, error]
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Forbidden or resource not found
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns health status, engine name, and current timestamp.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: NexusRTC Engine
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: integer
+
+  /rooms:
+    post:
+      summary: Create a new room
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, hostId]
+              properties:
+                title:
+                  type: string
+                hostId:
+                  type: string
+                maxParticipants:
+                  type: integer
+                  default: 50
+                isPrivate:
+                  type: boolean
+                  default: false
+                password:
+                  type: string
+                features:
+                  $ref: '#/components/schemas/RoomFeatures'
+                permissions:
+                  $ref: '#/components/schemas/RoomPermissions'
+      responses:
+        '201':
+          description: Room successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '400':
+          description: Invalid request parameters
+        '401':
+          description: Unauthorized API key
+
+    get:
+      summary: List rooms
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [created, active, ended]
+      responses:
+        '200':
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Room'
+
+  /rooms/{idOrSlug}:
+    get:
+      summary: Get room metadata
+      description: Returns room metadata. Sanitizes `hostKey` and `password` for unauthenticated/guest callers.
+      parameters:
+        - in: path
+          name: idOrSlug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '404':
+          description: Room not found
+
+    delete:
+      summary: Close an active room
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: idOrSlug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Room closed successfully
+
+  /rooms/{idOrSlug}/permissions:
+    get:
+      summary: Get room granular permission configuration
+      parameters:
+        - in: path
+          name: idOrSlug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Room permission matrix
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomPermissions'
+
+    put:
+      summary: Update room permissions and capability policies
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: idOrSlug
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomPermissions'
+      responses:
+        '200':
+          description: Permissions updated successfully
+
+  /rooms/{idOrSlug}/token:
+    post:
+      summary: Generate a cryptographically signed join token
+      description: Authoritative generation of participant JWT token with resolved capabilities.
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: idOrSlug
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participantId, name]
+              properties:
+                participantId:
+                  type: string
+                name:
+                  type: string
+                role:
+                  type: string
+                  example: participant
+                isHost:
+                  type: boolean
+                avatarUrl:
+                  type: string
+      responses:
+        '200':
+          description: Join token and room metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT session token signed with room secret
+                  wsUrl:
+                    type: string
+                  room:
+                    $ref: '#/components/schemas/Room'
+                  participant:
+                    $ref: '#/components/schemas/Participant'
+
+  /rooms/{roomId}/participants:
+    get:
+      summary: List active participants in a room
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of participants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Participant'
+        '403':
+          description: Cross-room IDOR forbidden
+
+  /rooms/{roomId}/chat:
+    get:
+      summary: Retrieve room chat history
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+        '403':
+          description: Cross-room IDOR forbidden
+
+  /rooms/{roomId}/recordings:
+    get:
+      summary: List recordings for a room
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of recordings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Recording'
+
+  /rooms/{roomId}/recordings/start:
+    post:
+      summary: Start a recording session
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Recording started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+
+  /recordings/{recordingId}/stop:
+    post:
+      summary: Stop a recording session
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: recordingId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Recording stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+
+  /recordings/file/{key}:
+    get:
+      summary: Download protected recording file
+      description: Path-traversal protected file delivery. Accessible via master API key or valid room session token.
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          description: Storage key of recording file
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video recording binary stream
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Path traversal or invalid key detected
+        '404':
+          description: Recording file not found
+
+  /rooms/{roomId}/breakouts:
+    get:
+      summary: List breakout rooms
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Breakout rooms list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BreakoutRoom'
+
+    post:
+      summary: Create a breakout room
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                durationMinutes:
+                  type: integer
+      responses:
+        '201':
+          description: Breakout room created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BreakoutRoom'
+
+  /rooms/{roomId}/broadcast/start:
+    post:
+      summary: Start RTMP live broadcast
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [streamUrl, streamKey]
+              properties:
+                streamUrl:
+                  type: string
+                streamKey:
+                  type: string
+      responses:
+        '200':
+          description: Broadcast started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveBroadcastConfig'
+
+  /rooms/{roomId}/broadcast/stop:
+    post:
+      summary: Stop RTMP live broadcast
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Broadcast stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveBroadcastConfig'

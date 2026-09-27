@@ -28,6 +28,8 @@ export class WebSocketSignalingServer {
   private wss: WebSocketServer;
   // Map of roomId -> Map of participantId -> ClientConnection
   private rooms = new Map<string, Map<string, ClientConnection>>();
+  // Track message rates per socket to mitigate flooding/abuse
+  private messageCounts = new WeakMap<WebSocket, { count: number; resetAt: number }>();
 
   constructor(
     wss: WebSocketServer,
@@ -41,18 +43,48 @@ export class WebSocketSignalingServer {
     this.init();
   }
 
+  private isRateLimited(ws: WebSocket): boolean {
+    const now = Date.now();
+    let stats = this.messageCounts.get(ws);
+    if (!stats || now > stats.resetAt) {
+      stats = { count: 1, resetAt: now + 1000 };
+      this.messageCounts.set(ws, stats);
+      return false;
+    }
+    stats.count++;
+    // Maximum 50 signaling messages per second per client
+    return stats.count > 50;
+  }
+
   private init() {
-    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    this.wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
       let clientSession: ClientConnection | null = null;
 
       ws.on('message', async (data: Buffer | string) => {
         try {
-          const message = JSON.parse(data.toString());
+          if (this.isRateLimited(ws)) {
+            ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Rate limit exceeded' } }));
+            return;
+          }
+
+          const rawStr = data.toString();
+          if (rawStr.length > 65536) { // 64KB max signaling payload
+            ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Payload exceeds maximum allowed size' } }));
+            return;
+          }
+
+          const message = JSON.parse(rawStr);
           const { event, payload } = message;
 
           switch (event) {
             case NexusEvents.JOIN: {
-              const { token } = payload;
+              const { token } = payload || {};
+              if (!token || typeof token !== 'string') {
+                ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Missing token' } }));
+                ws.close();
+                return;
+              }
+
               let auth: AuthTokenPayload;
               try {
                 auth = this.roomService.verifyJoinToken(token);
@@ -69,6 +101,9 @@ export class WebSocketSignalingServer {
                 return;
               }
 
+              // Compute effective permissions authoritatively
+              const effectiveSet = resolveEffectivePermissions(auth.role, auth.sub, room.permissions);
+
               const participant: Participant = {
                 id: auth.sub,
                 name: auth.name,
@@ -79,6 +114,7 @@ export class WebSocketSignalingServer {
                 isVideoMuted: true,
                 isScreenSharing: false,
                 isHandRaised: false,
+                permissions: Array.from(effectiveSet),
                 metadata: auth.metadata
               };
 

@@ -18,6 +18,21 @@ export class LocalStorageProvider implements IStorageProvider {
     }
   }
 
+  /**
+   * Resolves and verifies that the target path does not escape baseDir.
+   * Throws Error if path traversal is detected.
+   */
+  private resolveSafePath(key: string): string {
+    if (key.includes('..') || path.isAbsolute(key)) {
+      throw new Error(`Security Violation: Path traversal attempt detected for key '${key}'`);
+    }
+    const resolvedPath = path.resolve(this.baseDir, key);
+    if (!resolvedPath.startsWith(this.baseDir)) {
+      throw new Error(`Security Violation: Path traversal attempt detected for key '${key}'`);
+    }
+    return resolvedPath;
+  }
+
   async upload(
     key: string,
     content: Buffer | Uint8Array,
@@ -25,7 +40,7 @@ export class LocalStorageProvider implements IStorageProvider {
     metadata?: Record<string, string>
   ): Promise<{ url: string; sizeBytes: number }> {
     await this.ensureDir();
-    const filePath = path.join(this.baseDir, key);
+    const filePath = this.resolveSafePath(key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, Buffer.from(content));
 
@@ -45,7 +60,7 @@ export class LocalStorageProvider implements IStorageProvider {
 
   async delete(key: string): Promise<boolean> {
     try {
-      const filePath = path.join(this.baseDir, key);
+      const filePath = this.resolveSafePath(key);
       await fs.unlink(filePath);
       try {
         await fs.unlink(`${filePath}.meta.json`);
@@ -60,7 +75,7 @@ export class LocalStorageProvider implements IStorageProvider {
 
   async exists(key: string): Promise<boolean> {
     try {
-      const filePath = path.join(this.baseDir, key);
+      const filePath = this.resolveSafePath(key);
       await fs.access(filePath);
       return true;
     } catch {
@@ -69,6 +84,6 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   getFilePath(key: string): string {
-    return path.join(this.baseDir, key);
+    return this.resolveSafePath(key);
   }
 }
