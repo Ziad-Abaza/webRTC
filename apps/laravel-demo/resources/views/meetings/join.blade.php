@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>
         @if($status === 'valid' && $room)
-            Join {{ $room->title }} - NexusRTC Invitation
+            Join {{ $room->title }} - WebRTC Invitation
         @else
-            Meeting Invitation - NexusRTC
+            Meeting Invitation - WebRTC
         @endif
     </title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -22,10 +22,10 @@
         <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-800/80">
             <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30 text-xl">
-                    N
+                    W
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold tracking-tight text-white leading-tight">NexusRTC</h1>
+                    <h1 class="text-lg font-bold tracking-tight text-white leading-tight">WebRTC</h1>
                     <p class="text-[11px] text-slate-400">Secure Session Invitation</p>
                 </div>
             </div>
@@ -171,7 +171,7 @@
 
         <div class="mt-8 pt-6 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
             <span>Authoritative Engine Security</span>
-            <span>NexusRTC Monorepo</span>
+            <span>WebRTC Monorepo</span>
         </div>
     </div>
 

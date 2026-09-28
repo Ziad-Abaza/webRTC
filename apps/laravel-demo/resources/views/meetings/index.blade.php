@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexusRTC Video Meetings - Laravel Integration Demo</title>
+    <title>WebRTC Video Meetings - Laravel Integration Demo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>body { font-family: 'Inter', sans-serif; }</style>
@@ -13,10 +13,10 @@
     <div class="max-w-xl w-full bg-slate-800 rounded-2xl shadow-2xl border border-slate-700/60 p-8">
         <div class="flex items-center space-x-3 mb-6">
             <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/30 text-xl">
-                N
+                W
             </div>
             <div>
-                <h1 class="text-2xl font-bold tracking-tight text-white">NexusRTC Engine</h1>
+                <h1 class="text-2xl font-bold tracking-tight text-white">WebRTC Engine</h1>
                 <p class="text-xs text-slate-400">Production WebRTC Foundation • Laravel 13 Integration</p>
             </div>
         </div>

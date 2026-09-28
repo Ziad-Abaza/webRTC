@@ -4,21 +4,24 @@ import { ChatManager } from './ChatManager.js';
 import { BreakoutManager } from './BreakoutManager.js';
 import {
   NexusEvents,
+  WebRTCEvents,
   Participant,
   JoinedResponse,
   Recording,
   LiveBroadcastConfig,
   BreakoutRoom,
   ChatMessage
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 
-export interface NexusClientOptions {
+export interface WebRTCClientOptions {
   wsUrl: string;
   token: string;
   autoConnect?: boolean;
 }
 
-export class NexusClient extends EventEmitter {
+export type NexusClientOptions = WebRTCClientOptions;
+
+export class WebRTCClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private wsUrl: string;
   private token: string;
@@ -29,7 +32,7 @@ export class NexusClient extends EventEmitter {
   public chat: ChatManager;
   public breakout: BreakoutManager;
 
-  constructor(options: NexusClientOptions) {
+  constructor(options: WebRTCClientOptions) {
     super();
     this.wsUrl = options.wsUrl;
     this.token = options.token;
@@ -296,3 +299,6 @@ export class NexusClient extends EventEmitter {
     this.removeAllListeners();
   }
 }
+
+export { WebRTCClient as NexusClient };
+

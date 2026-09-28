@@ -2,12 +2,12 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use NexusRTC\Client\NexusRtcClient;
-use NexusRTC\Client\Exceptions\NexusRtcException;
+use WebRTC\Client\WebRtcClient;
+use WebRTC\Client\Exceptions\WebRtcException;
 
-echo "=== Testing NexusRTC PHP Client ===\n";
+echo "=== Testing WebRTC PHP Client ===\n";
 
-$client = new NexusRtcClient('http://127.0.0.1:4000', 'nexusrtc-master-api-key');
+$client = new WebRtcClient('http://127.0.0.1:4000', 'webrtc-master-api-key');
 
 try {
     // 1. Create Room
@@ -78,7 +78,7 @@ try {
     echo "  -> Revoked Invitation Code: {$revoked['invitation']['code']}, Status: {$revoked['invitation']['status']}\n";
 
     echo "\n>>> All PHP Client Tests Passed Successfully! <<<\n";
-} catch (NexusRtcException $e) {
+} catch (WebRtcException $e) {
     echo "PHP SDK Error: " . $e->getMessage() . "\n";
     exit(1);
 }

@@ -4,10 +4,10 @@ import { EventEmitter } from '../src/EventEmitter.js';
 import { ChatManager } from '../src/ChatManager.js';
 import { BreakoutManager } from '../src/BreakoutManager.js';
 import { MediaManager } from '../src/MediaManager.js';
-import { NexusClient } from '../src/NexusClient.js';
-import { NexusEvents } from '@nexusrtc/core';
+import { NexusClient, WebRTCClient } from '../src/NexusClient.js';
+import { NexusEvents, WebRTCEvents } from '@webrtc/core';
 
-test('NexusRTC Client SDK Unit Tests', async (t) => {
+test('WebRTC Client SDK Unit Tests', async (t) => {
   await t.test('EventEmitter emits and registers listeners', () => {
     const emitter = new EventEmitter();
     let called = false;

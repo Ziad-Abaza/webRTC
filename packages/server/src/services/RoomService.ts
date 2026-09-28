@@ -14,7 +14,7 @@ import {
   RoomInvitation,
   CreateInvitationInput,
   resolveEffectivePermissions
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 import { ServerConfig } from '../config/index.js';
 
 export interface CreateRoomInput {

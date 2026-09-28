@@ -3,7 +3,7 @@ import {
   IDatabaseAdapter,
   IMediaProvider,
   LiveBroadcastConfig
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 
 export class BroadcastService {
   constructor(

@@ -7,7 +7,7 @@ import {
   BreakoutRoom,
   LiveBroadcastConfig,
   RoomInvitation
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 
 export class MemoryDatabaseAdapter implements IDatabaseAdapter {
   private rooms = new Map<string, Room>();

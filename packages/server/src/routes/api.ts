@@ -4,7 +4,7 @@ import { RecordingService } from '../services/RecordingService.js';
 import { BreakoutService } from '../services/BreakoutService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { LocalStorageProvider } from '../storage/LocalStorageProvider.js';
-import { IDatabaseAdapter, Room, RoomPermission, resolveEffectivePermissions } from '@nexusrtc/core';
+import { IDatabaseAdapter, Room, RoomPermission, resolveEffectivePermissions } from '@webrtc/core';
 import { apiKeyMiddleware, apiKeyOrJwtMiddleware, AuthenticatedRequest } from '../middlewares/auth.js';
 import { ServerConfig } from '../config/index.js';
 import fs from 'fs';
@@ -35,7 +35,7 @@ export function createApiRouter(
   router.get('/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
-      service: 'NexusRTC Engine',
+      service: 'WebRTC Engine',
       version: '1.0.0',
       timestamp: Date.now()
     });

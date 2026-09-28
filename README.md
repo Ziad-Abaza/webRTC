@@ -1,4 +1,4 @@
-# NexusRTC: Universal WebRTC Communication Engine
+# WebRTC: Universal WebRTC Communication Engine
 
 A production-grade, framework-agnostic real-time communication platform designed as reusable infrastructure for web and mobile applications (Laravel, Node.js, React, Vue, Vanilla JS, Flutter via REST/WS).
 
@@ -17,9 +17,9 @@ A production-grade, framework-agnostic real-time communication platform designed
 - **Server-Side Recording:** Start/stop recording lifecycle, asset storage persistence, and secure download URL generation.
 - **Live Broadcasting:** RTMP live streaming integration and status tracking.
 - **Multi-Stack Consumption:**
-  - **Node.js/TypeScript Engine Server:** REST API + WebSocket Signaling Server (`@nexusrtc/server`).
-  - **Framework-Agnostic Web SDK:** Pure TypeScript client (`@nexusrtc/client`).
-  - **PHP / Laravel Package:** Composer SDK with ServiceProvider and Facades (`nexusrtc/client`).
+  - **Node.js/TypeScript Engine Server:** REST API + WebSocket Signaling Server (`@webrtc/server`).
+  - **Framework-Agnostic Web SDK:** Pure TypeScript client (`@webrtc/client`).
+  - **PHP / Laravel Package:** Composer SDK with ServiceProvider and Facades (`webrtc/client`).
   - **Flutter / Mobile Ready:** Connects directly via standard HTTP REST and WebSocket JSON payloads without requiring specialized proprietary mobile SDKs.
 
 ---
@@ -27,40 +27,40 @@ A production-grade, framework-agnostic real-time communication platform designed
 ## 🏗️ Architecture & Package Layout
 
 ```
-nexusrtc/
+webrtc/
 ├── packages/
-│   ├── core/                  # Shared domain types, provider interfaces, events
+│   ├── core/                  # Shared domain types, provider interfaces, events (@webrtc/core)
 │   │   ├── src/types.ts       # Room, Participant, ChatMessage, BreakoutRoom, Recording
 │   │   ├── src/interfaces.ts  # IMediaProvider, IStorageProvider, IDatabaseAdapter
-│   │   └── src/events.ts      # NexusEvents protocol constants
-│   ├── server/                # Standalone Engine Server (REST + WebSocket)
+│   │   └── src/events.ts      # WebRTCEvents protocol constants
+│   ├── server/                # Standalone Engine Server (REST + WebSocket, @webrtc/server)
 │   │   ├── src/services/      # RoomService, RecordingService, BreakoutService, BroadcastService
 │   │   ├── src/media/         # JitsiMediaProvider
 │   │   ├── src/storage/       # LocalStorageProvider
-│   │   ├── src/db/            # MemoryDatabaseAdapter
+│   │   ├── src/db/            # MemoryDatabaseAdapter, SqliteDatabaseAdapter
 │   │   └── src/ws/            # WebSocketSignalingServer
-│   └── client/                # Framework-agnostic TypeScript Client SDK
-│       ├── src/NexusClient.ts # Master client orchestrator
+│   └── client/                # Framework-agnostic TypeScript Client SDK (@webrtc/client)
+│       ├── src/WebRtcClient.ts# Master client orchestrator
 │       ├── src/MediaManager.ts# Jitsi & WebRTC media wrapper
 │       ├── src/ChatManager.ts # Real-time chat manager
 │       └── src/BreakoutManager.ts # Subrooms manager
 ├── sdk/
-│   └── php/                   # Composer package `nexusrtc/client`
-│       ├── src/NexusRtcClient.php
-│       └── src/Laravel/       # NexusRtcServiceProvider & Facades\NexusRTC
+│   └── php/                   # Composer package `webrtc/client`
+│       ├── src/WebRtcClient.php
+│       └── src/Laravel/       # WebRtcServiceProvider & Facades\WebRTC
 └── apps/
     └── laravel-demo/          # Independent Laravel application proving full integration
         ├── app/Http/Controllers/MeetingController.php
         ├── resources/views/meetings/index.blade.php
         ├── resources/views/meetings/room.blade.php
-        └── tests/Feature/NexusRtcIntegrationTest.php
+        └── tests/Feature/WebRtcIntegrationTest.php
 ```
 
 ---
 
 ## 🚀 Quickstart Guide
 
-### 1. Start the NexusRTC Engine Server
+### 1. Start the WebRTC Engine Server
 
 ```bash
 cd packages/server
@@ -73,13 +73,13 @@ The server will start listening at:
 
 ### Environment Configuration (`packages/server/.env` or system env):
 ```env
-NEXUS_PORT=4000
-NEXUS_HOST=0.0.0.0
-NEXUS_API_KEY=nexusrtc-master-api-key
-NEXUS_JWT_SECRET=nexusrtc-super-secret-jwt-key-minimum-32-chars-long
-NEXUS_MEDIA_PROVIDER=jitsi
-NEXUS_DATABASE_ADAPTER=sqlite
-NEXUS_SQLITE_PATH=./storage/nexusrtc.sqlite
+WEBRTC_PORT=4000
+WEBRTC_HOST=0.0.0.0
+WEBRTC_API_KEY=webrtc-master-api-key
+WEBRTC_JWT_SECRET=webrtc-super-secret-jwt-key-minimum-32-chars-long
+WEBRTC_MEDIA_PROVIDER=jitsi
+WEBRTC_DATABASE_ADAPTER=sqlite
+WEBRTC_SQLITE_PATH=./storage/webrtc.sqlite
 JITSI_DOMAIN=meet.jit.si
 STORAGE_LOCAL_DIR=./storage/recordings
 ```
@@ -89,10 +89,10 @@ STORAGE_LOCAL_DIR=./storage/recordings
 ## 💻 Consuming from Web (React, Vue, Vanilla TS/JS)
 
 ```typescript
-import { NexusClient } from '@nexusrtc/client';
+import { WebRTCClient } from '@webrtc/client';
 
 // 1. Initialize client with WebSocket URL and Room Token
-const client = new NexusClient({
+const client = new WebRTCClient({
   wsUrl: 'ws://localhost:4000/ws',
   token: participantJwtToken
 });
@@ -131,32 +131,32 @@ client.breakout.createBreakout('Sub-team A', 15);
 
 1. Require the package via Composer:
 ```bash
-composer require nexusrtc/client
+composer require webrtc/client
 ```
 
 2. Publish the config file:
 ```bash
-php artisan vendor:publish --tag=nexusrtc-config
+php artisan vendor:publish --tag=webrtc-config
 ```
 
 3. Set your environment variables in `.env`:
 ```env
-NEXUSRTC_BASE_URL=http://127.0.0.1:4000
-NEXUSRTC_API_KEY=nexusrtc-master-api-key
-NEXUSRTC_WS_URL=ws://127.0.0.1:4000/ws
+WEBRTC_BASE_URL=http://127.0.0.1:4000
+WEBRTC_API_KEY=webrtc-master-api-key
+WEBRTC_WS_URL=ws://127.0.0.1:4000/ws
 ```
 
 ### Usage in Laravel Controllers
 
 ```php
-use NexusRTC\Client\Laravel\Facades\NexusRTC;
+use WebRTC\Client\Laravel\Facades\WebRTC;
 
 class ConferenceController extends Controller
 {
     // Create a new meeting room
     public function store()
     {
-        $room = NexusRTC::createRoom([
+        $room = WebRTC::createRoom([
             'title' => 'Weekly Executive Sync',
             'hostId' => (string) auth()->id(),
             'features' => [
@@ -196,12 +196,12 @@ class ConferenceController extends Controller
             $tokenPayload['role'] = 'participant';
         }
 
-        $session = NexusRTC::generateJoinToken($slug, $tokenPayload);
+        $session = WebRTC::generateJoinToken($slug, $tokenPayload);
 
         return view('meeting', [
             'token' => $session['token'],
             'media' => $session['media'],
-            'wsUrl' => config('nexusrtc.ws_url')
+            'wsUrl' => config('webrtc.ws_url')
         ]);
     }
 }
@@ -211,7 +211,7 @@ class ConferenceController extends Controller
 
 ## 🔒 Security Architecture: Authoritative Server-Side Authorization
 
-NexusRTC enforces strict zero-trust security at the server level:
+WebRTC enforces strict zero-trust security at the server level:
 - **Timing-Safe Authentication**: API key verification uses constant-time comparisons (`crypto.timingSafeEqual`) to prevent side-channel timing attacks.
 - **Authoritative Role Derivation (`RoomService`)**: Host and Moderator privileges cannot be claimed by passing `role: host` in client payloads or query parameters. The engine server verifies `hostId` or validates the room's secret `hostKey` before granting elevated roles. Unverified claims are automatically demoted to `participant`.
 - **Path Traversal & Storage Boundary Defense (`LocalStorageProvider`)**: File keys are validated to prevent directory traversal (`..`, absolute paths, and prefix checking) ensuring recording downloads cannot access the host filesystem.
@@ -234,12 +234,12 @@ For coding agents, AI tools, and developers, a complete machine-readable OpenAPI
 
 ## 📱 Consuming from Flutter / Mobile
 
-Flutter and mobile apps do not require a separate mobile SDK. Mobile applications interact with NexusRTC directly:
+Flutter and mobile apps do not require a separate mobile SDK. Mobile applications interact with WebRTC directly:
 1. **HTTP REST**: Fetch room metadata and request a session token from your backend (e.g. Laravel).
 2. **WebSocket Signaling**: Connect directly to `ws://server:4000/ws` and send the standard JSON handshake:
 ```json
 {
-  "event": "nexus:join",
+  "event": "webrtc:join",
   "payload": { "token": "<participant_jwt_token>" }
 }
 ```
@@ -249,30 +249,25 @@ Flutter and mobile apps do not require a separate mobile SDK. Mobile application
 
 ## 🧪 Verification & Testing
 
-NexusRTC includes rigorous automated test coverage across every layer of the architecture:
+WebRTC includes rigorous automated test coverage across every layer of the architecture:
 
 ### 1. Server, Persistence, Permissions & Deep Security E2E Tests:
 ```bash
-node --test packages/server/dist/tests/server.test.js
+npm run test --workspace=@webrtc/server
 ```
-*Result: 7/7 passing tests verifying REST room lifecycle, token issuance, multi-participant WebSocket signaling, live chat broadcast, raise-hand notifications, breakout rooms, SQLite persistence, viewer role capability restrictions, security tests proving rejection of role forging, token tampering, path traversal protection, hostKey sanitization, IDOR cross-room access protection, and WebSocket rate limiting.*
 
 ### 2. Client SDK Unit Tests:
 ```bash
-node --test packages/client/dist/tests/client.test.js
+npm run test --workspace=@webrtc/client
 ```
-*Result: 5/5 passing tests verifying event dispatching, chat manager messaging, breakout room lifecycle, and media manager state toggles.*
 
 ### 3. PHP SDK Standalone Test Suite:
 ```bash
 php sdk/php/tests/test_client.php
 ```
-*Result: All SDK endpoints verified (Room CRUD, Token issuance, Breakout rooms, Recordings).*
 
 ### 4. Standalone Laravel Application Integration Proof:
 ```bash
 cd apps/laravel-demo
-php artisan test --filter=NexusRtcIntegrationTest
+php artisan test --filter=WebRtcIntegrationTest
 ```
-*Result: 5/5 passing tests (28 assertions) verifying full end-to-end meeting creation, join token issuance, blade template rendering with bundled Web SDK, participant guest flows, and multi-session authorization proving that regular invited participants cannot obtain or exercise host privileges.*
-

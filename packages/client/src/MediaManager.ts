@@ -1,5 +1,5 @@
 import { EventEmitter } from './EventEmitter.js';
-import { NexusEvents } from '@nexusrtc/core';
+import { NexusEvents, WebRTCEvents } from '@webrtc/core';
 
 declare global {
   interface Window {

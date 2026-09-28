@@ -90,7 +90,7 @@ export interface IStorageProvider {
 
 /**
  * Pluggable Database / State Persistence Adapter.
- * Allows NexusRTC to run completely in-memory, on SQLite, or on Postgres/MySQL.
+ * Allows WebRTC to run completely in-memory, on SQLite, or on Postgres/MySQL.
  */
 export interface IDatabaseAdapter {
   init(): Promise<void>;

@@ -1,5 +1,5 @@
 {
-  "name": "nexusrtc-monorepo",
+  "name": "webrtc-monorepo",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
@@ -9,7 +9,7 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "start": "node packages/server/dist/src/index.js",
-    "server": "npm start --workspace=@nexusrtc/server"
+    "server": "npm start --workspace=@webrtc/server"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

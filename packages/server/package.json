@@ -1,7 +1,7 @@
 {
-  "name": "@nexusrtc/server",
+  "name": "@webrtc/server",
   "version": "1.0.0",
-  "description": "Production-grade, pluggable WebRTC Engine Server for NexusRTC",
+  "description": "Production-grade, pluggable WebRTC Engine Server",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "type": "module",
@@ -12,7 +12,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@nexusrtc/core": "*",
+    "@webrtc/core": "*",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

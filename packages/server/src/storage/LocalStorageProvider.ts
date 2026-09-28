@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { IStorageProvider } from '@nexusrtc/core';
+import { IStorageProvider } from '@webrtc/core';
 
 export class LocalStorageProvider implements IStorageProvider {
   readonly name = 'local';

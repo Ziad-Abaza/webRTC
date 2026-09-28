@@ -1,7 +1,7 @@
 {
-  "name": "@nexusrtc/core",
+  "name": "@webrtc/core",
   "version": "1.0.0",
-  "description": "Core types, interfaces, and contracts for NexusRTC",
+  "description": "Core types, interfaces, and contracts for WebRTC",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

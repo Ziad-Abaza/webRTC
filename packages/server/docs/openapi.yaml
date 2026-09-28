@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: NexusRTC WebRTC Communication Engine API
+  title: WebRTC Communication Engine API
   version: 1.0.0
   description: >
     Production-grade, framework-agnostic WebRTC Communication Engine REST & WebSocket API specification.
@@ -8,7 +8,7 @@ info:
     recording storage, live broadcasting, and breakout rooms.
 servers:
   - url: http://localhost:4000/api/v1
-    description: Default local NexusRTC server instance
+    description: Default local WebRTC server instance
 
 components:
   securitySchemes:
@@ -294,7 +294,7 @@ paths:
                     example: ok
                   service:
                     type: string
-                    example: NexusRTC Engine
+                    example: WebRTC Engine
                   version:
                     type: string
                     example: 1.0.0

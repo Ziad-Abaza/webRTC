@@ -1,6 +1,6 @@
 <?php
 
-namespace NexusRTC\Client\Models;
+namespace WebRTC\Client\Models;
 
 class Room implements \JsonSerializable
 {
@@ -65,3 +65,8 @@ class Room implements \JsonSerializable
         return $this->toArray(false);
     }
 }
+
+if (!class_exists('NexusRTC\Client\Models\Room', false)) {
+    class_alias(Room::class, 'NexusRTC\Client\Models\Room');
+}
+

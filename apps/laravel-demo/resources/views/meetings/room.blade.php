@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $room->title }} - NexusRTC Room</title>
+    <title>{{ $room->title }} - WebRTC Room</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -119,7 +119,7 @@
                 <div id="panel-chat" class="flex-1 flex flex-col p-4 overflow-hidden">
                     <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
                         <div class="p-3 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400">
-                            Welcome to <strong>{{ $room->title }}</strong>. Chat is encrypted and synced via Nexus signaling.
+                            Welcome to <strong>{{ $room->title }}</strong>. Chat is encrypted and synced via WebRTC signaling.
                         </div>
                     </div>
 
@@ -304,7 +304,8 @@
     </div>
 
     <!-- Load Client Bundle -->
-    <script src="/js/nexusrtc.bundle.js"></script>
+    <script src="/js/webrtc.bundle.js"></script>
+    <script>if (typeof WebRTC !== 'undefined') window.NexusRTC = window.NexusRTC || WebRTC;</script>
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -338,19 +339,21 @@
             tabParticipants.onclick = () => switchTab(tabParticipants, panelParticipants);
             tabBreakout.onclick = () => switchTab(tabBreakout, panelBreakout);
 
-            // Instantiate NexusClient from bundled SDK
-            const client = new NexusRTC.NexusClient({
+            // Instantiate WebRTCClient from bundled SDK
+            const ClientClass = (window.WebRTC && window.WebRTC.WebRTCClient) || (window.WebRTC && window.WebRTC.NexusClient) || (window.NexusRTC && window.NexusRTC.NexusClient);
+            const client = new ClientClass({
                 wsUrl: config.wsUrl,
                 token: config.token,
                 autoConnect: true
             });
+            window.WebRtcClientInstance = client;
             window.NexusClientInstance = client;
 
             // WebSocket Connection Events
-            client.on('connected', () => console.log('[NexusRTC] Connected to signaling gateway'));
+            client.on('connected', () => console.log('[WebRTC] Connected to signaling gateway'));
             
             client.on('joined', (data) => {
-                console.log('[NexusRTC] Successfully joined room', data);
+                console.log('[WebRTC] Successfully joined room', data);
                 updateParticipantsList(client.getParticipants());
                 
                 // Mount Media SFU Provider (Jitsi Meet iframe)
@@ -488,7 +491,7 @@
             });
 
             client.on('permissionsUpdated', (payload) => {
-                console.log('[NexusRTC] Permissions updated from server:', payload);
+                console.log('[WebRTC] Permissions updated from server:', payload);
                 applyPermissionsToUI();
                 appendChatMessage({
                     senderName: 'System Notice',
@@ -944,6 +947,7 @@
                 }
             };
 
+            window.WebRtcClientInstance = client;
             window.NexusClientInstance = client;
         });
     </script>

@@ -3,6 +3,7 @@ import { IncomingMessage } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import {
   NexusEvents,
+  WebRTCEvents,
   ChatMessage,
   Participant,
   Room,
@@ -12,12 +13,12 @@ import {
   resolveEffectivePermissions,
   RoomPermissionsConfig,
   canModerateParticipant
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 import { RoomService } from '../services/RoomService.js';
 import { RecordingService } from '../services/RecordingService.js';
 import { BreakoutService } from '../services/BreakoutService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
-import { IDatabaseAdapter } from '@nexusrtc/core';
+import { IDatabaseAdapter } from '@webrtc/core';
 
 interface ClientConnection {
   connectionId: string;
@@ -78,8 +79,9 @@ export class WebSocketSignalingServer {
 
           const message = JSON.parse(rawStr);
           const { event, payload } = message;
+          const normalizedEvent = typeof event === 'string' ? event.replace(/^nexus:/, 'webrtc:') : event;
 
-          switch (event) {
+          switch (normalizedEvent) {
             case NexusEvents.JOIN: {
               if (clientSession) {
                 ws.send(JSON.stringify({ event: NexusEvents.ERROR, payload: { message: 'Session already joined on this connection' } }));

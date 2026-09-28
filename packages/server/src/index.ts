@@ -13,7 +13,7 @@ import { BreakoutService } from './services/BreakoutService.js';
 import { BroadcastService } from './services/BroadcastService.js';
 import { WebSocketSignalingServer } from './ws/WebSocketSignalingServer.js';
 import { createApiRouter } from './routes/api.js';
-import { IDatabaseAdapter } from '@nexusrtc/core';
+import { IDatabaseAdapter } from '@webrtc/core';
 
 export function createServer(customDb?: IDatabaseAdapter) {
   const config = loadConfig();
@@ -66,7 +66,7 @@ export function createServer(customDb?: IDatabaseAdapter) {
 
   // Global Error Handler - Prevents internal stack trace leakage
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error('[NexusRTC Internal Error]', err);
+    console.error('[WebRTC Internal Error]', err);
     res.status(err.status || 500).json({
       error: err.message && process.env.NODE_ENV !== 'production' ? err.message : 'Internal Server Error'
     });
@@ -99,8 +99,8 @@ export function createServer(customDb?: IDatabaseAdapter) {
       await db.init();
       return new Promise<void>((resolve) => {
         server.listen(config.port, config.host, () => {
-          console.log(`[NexusRTC Server] Running at http://${config.host}:${config.port}`);
-          console.log(`[NexusRTC Server] WebSocket signaling at ws://${config.host}:${config.port}/ws`);
+          console.log(`[WebRTC Server] Running at http://${config.host}:${config.port}`);
+          console.log(`[WebRTC Server] WebSocket signaling at ws://${config.host}:${config.port}/ws`);
           resolve();
         });
       });

@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../src/index.js';
 import WebSocket from 'ws';
-import { NexusEvents } from '@nexusrtc/core';
+import { NexusEvents, WebRTCEvents } from '@webrtc/core';
 
-test('NexusRTC Server E2E Flow', async (t) => {
+test('WebRTC Server E2E Flow', async (t) => {
   const instance = createServer();
   const port = 4999;
   instance.config.port = port;
@@ -168,11 +168,11 @@ test('NexusRTC Server E2E Flow', async (t) => {
 
     aliceWs.send(JSON.stringify({
       event: NexusEvents.CHAT_SEND,
-      payload: { content: 'Hello Bob! Welcome to NexusRTC' }
+      payload: { content: 'Hello Bob! Welcome to WebRTC' }
     }));
 
     const chatData = await bobChatPromise;
-    assert.equal(chatData.content, 'Hello Bob! Welcome to NexusRTC');
+    assert.equal(chatData.content, 'Hello Bob! Welcome to WebRTC');
     assert.equal(chatData.senderName, 'Alice Host');
 
     // Alice creates Breakout Room

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use NexusRTC\Client\Laravel\Facades\NexusRTC;
-use NexusRTC\Client\Exceptions\NexusRtcException;
+use WebRTC\Client\Laravel\Facades\WebRTC;
+use WebRTC\Client\Exceptions\WebRtcException;
 
 class MeetingController extends Controller
 {
@@ -76,7 +76,7 @@ class MeetingController extends Controller
                 $hostPermissions[] = 'breakout:broadcast';
             }
 
-            $room = NexusRTC::createRoom([
+            $room = WebRTC::createRoom([
                 'title' => $validated['title'],
                 'hostId' => 'host-' . substr(md5(uniqid()), 0, 8),
                 'features' => [
@@ -106,7 +106,7 @@ class MeetingController extends Controller
                 'slug' => $room->slug,
                 'name' => $validated['hostName']
             ]);
-        } catch (NexusRtcException $e) {
+        } catch (WebRtcException $e) {
             return back()->withErrors(['error' => 'Failed to initialize meeting: ' . $e->getMessage()]);
         }
     }
@@ -128,7 +128,7 @@ class MeetingController extends Controller
         ]);
 
         try {
-            $invitation = NexusRTC::createInvitation($slug, [
+            $invitation = WebRTC::createInvitation($slug, [
                 'role' => $validated['role'] ?? 'participant',
                 'expiresInSeconds' => !empty($validated['expiresInSeconds']) ? (int) $validated['expiresInSeconds'] : null,
                 'maxUses' => !empty($validated['maxUses']) ? (int) $validated['maxUses'] : null,
@@ -137,7 +137,7 @@ class MeetingController extends Controller
             $invitation['joinUrl'] = route('meetings.join', ['code' => $invitation['code']]);
 
             return response()->json($invitation, 201);
-        } catch (NexusRtcException $e) {
+        } catch (WebRtcException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
     }
@@ -153,12 +153,12 @@ class MeetingController extends Controller
         }
 
         try {
-            $invitations = NexusRTC::listInvitations($slug);
+            $invitations = WebRTC::listInvitations($slug);
             foreach ($invitations as &$inv) {
                 $inv['joinUrl'] = route('meetings.join', ['code' => $inv['code']]);
             }
             return response()->json($invitations);
-        } catch (NexusRtcException $e) {
+        } catch (WebRtcException $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
@@ -174,9 +174,9 @@ class MeetingController extends Controller
         }
 
         try {
-            $result = NexusRTC::revokeInvitation($code);
+            $result = WebRTC::revokeInvitation($code);
             return response()->json($result);
-        } catch (NexusRtcException $e) {
+        } catch (WebRtcException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
     }
@@ -187,8 +187,8 @@ class MeetingController extends Controller
     public function showJoin(Request $request, string $code)
     {
         try {
-            $invitation = NexusRTC::getInvitation($code);
-        } catch (NexusRtcException $e) {
+            $invitation = WebRTC::getInvitation($code);
+        } catch (WebRtcException $e) {
             return view('meetings.join', [
                 'status' => 'invalid',
                 'message' => 'This invitation link could not be verified or is invalid.',
@@ -234,7 +234,7 @@ class MeetingController extends Controller
             ]);
         }
 
-        $room = NexusRTC::getRoom($invitation['roomSlug']);
+        $room = WebRTC::getRoom($invitation['roomSlug']);
         if (!$room || $room->status !== 'active') {
             return view('meetings.join', [
                 'status' => 'room_closed',
@@ -263,7 +263,7 @@ class MeetingController extends Controller
         $name = trim(strip_tags((string) $validated['name'])) ?: 'Guest Participant';
 
         try {
-            $invitation = NexusRTC::getInvitation($code);
+            $invitation = WebRTC::getInvitation($code);
             if (!$invitation || empty($invitation['isValid'])) {
                 $errorMsg = 'This invitation is invalid, expired, or has reached its usage limit.';
                 if ($invitation && $invitation['status'] === 'revoked') {
@@ -273,7 +273,7 @@ class MeetingController extends Controller
             }
 
             // Generate authoritative join token from NexusRTC engine bound to this invitation
-            $tokenData = NexusRTC::generateJoinToken($invitation['roomSlug'], [
+            $tokenData = WebRTC::generateJoinToken($invitation['roomSlug'], [
                 'name' => $name,
                 'inviteCode' => $code,
             ]);
@@ -292,7 +292,7 @@ class MeetingController extends Controller
             return redirect()->route('meetings.show', [
                 'slug' => $invitation['roomSlug'],
             ]);
-        } catch (NexusRtcException $e) {
+        } catch (WebRtcException $e) {
             return back()->withErrors(['error' => 'Unable to join meeting: ' . $e->getMessage()]);
         }
     }
@@ -308,7 +308,7 @@ class MeetingController extends Controller
             $name = substr($name, 0, 60);
         }
 
-        $room = NexusRTC::getRoom($slug);
+        $room = WebRTC::getRoom($slug);
         if (!$room) {
             abort(404, 'Meeting room not found or expired.');
         }
@@ -349,7 +349,7 @@ class MeetingController extends Controller
             }
 
             // Generate authoritative join token from NexusRTC engine
-            $tokenData = NexusRTC::generateJoinToken($slug, $tokenPayload);
+            $tokenData = WebRTC::generateJoinToken($slug, $tokenPayload);
         }
 
         return view('meetings.room', [
@@ -357,7 +357,7 @@ class MeetingController extends Controller
             'token' => $tokenData['token'],
             'media' => $tokenData['media'],
             'participant' => $tokenData['participant'],
-            'wsUrl' => config('nexusrtc.ws_url', 'ws://127.0.0.1:4000/ws'),
+            'wsUrl' => config('webrtc.ws_url', config('nexusrtc.ws_url', 'ws://127.0.0.1:4000/ws')),
             'isHost' => $isHost,
         ]);
     }

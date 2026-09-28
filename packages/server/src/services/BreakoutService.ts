@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   IDatabaseAdapter,
   BreakoutRoom
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 
 export class BreakoutService {
   constructor(private db: IDatabaseAdapter) {}

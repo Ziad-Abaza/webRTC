@@ -8,7 +8,7 @@ import {
   BreakoutRoom,
   LiveBroadcastConfig,
   RoomInvitation
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 import path from 'path';
 import fs from 'fs';
 
@@ -16,7 +16,7 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
   private db!: Database.Database;
   private dbPath: string;
 
-  constructor(dbPath: string = './storage/nexusrtc.sqlite') {
+  constructor(dbPath: string = './storage/webrtc.sqlite') {
     this.dbPath = dbPath;
   }
 

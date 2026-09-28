@@ -1,5 +1,5 @@
 import { EventEmitter } from './EventEmitter.js';
-import { ChatMessage, NexusEvents } from '@nexusrtc/core';
+import { ChatMessage, NexusEvents, WebRTCEvents } from '@webrtc/core';
 
 export class ChatManager extends EventEmitter {
   private messages: ChatMessage[] = [];

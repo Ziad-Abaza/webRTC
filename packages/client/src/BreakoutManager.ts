@@ -1,5 +1,5 @@
 import { EventEmitter } from './EventEmitter.js';
-import { BreakoutRoom, NexusEvents } from '@nexusrtc/core';
+import { BreakoutRoom, NexusEvents, WebRTCEvents } from '@webrtc/core';
 
 export class BreakoutManager extends EventEmitter {
   private breakoutRooms: Map<string, BreakoutRoom> = new Map();

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { IMediaProvider, Room, Participant, MediaTokenResult, RoomPermission } from '@nexusrtc/core';
+import { IMediaProvider, Room, Participant, MediaTokenResult, RoomPermission } from '@webrtc/core';
 
 export interface JitsiProviderOptions {
   domain?: string;
@@ -50,8 +50,8 @@ export class JitsiMediaProvider implements IMediaProvider {
             'screen-sharing': canScreenshare
           }
         },
-        aud: this.appId || 'nexusrtc',
-        iss: this.appId || 'nexusrtc',
+        aud: this.appId || 'webrtc',
+        iss: this.appId || 'webrtc',
         sub: this.domain,
         room: room.slug,
         exp: Math.floor(Date.now() / 1000) + 24 * 3600 // 24h validity

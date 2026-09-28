@@ -14,7 +14,7 @@ class NexusRtcIntegrationTest extends TestCase
         // 1. Visit index page
         $response = $this->get('/');
         $response->assertStatus(200);
-        $response->assertSee('NexusRTC Engine');
+        $response->assertSee('WebRTC Engine');
         $response->assertSee('Participant Default Permissions');
 
         // 2. Submit meeting creation with granular participant permission controls
@@ -43,7 +43,7 @@ class NexusRtcIntegrationTest extends TestCase
         $roomResponse->assertSee('host');
         $roomResponse->assertSee('btn-toggle-recording');
         $roomResponse->assertSee('Launch Breakout Room');
-        $roomResponse->assertSee('nexusrtc.bundle.js');
+        $roomResponse->assertSee('webrtc.bundle.js');
     }
 
     /**
@@ -152,7 +152,7 @@ class NexusRtcIntegrationTest extends TestCase
         $this->assertNotEmpty($guestToken);
 
         // 3. Direct REST Attack: Regular participant attempts host-only REST endpoints
-        $baseUrl = config('nexusrtc.base_url', 'http://127.0.0.1:4000');
+        $baseUrl = config('webrtc.base_url', config('nexusrtc.base_url', 'http://127.0.0.1:4000'));
 
         // Attack A: Guest attempts to update room permissions via REST
         $permAttack = \Illuminate\Support\Facades\Http::withToken($guestToken)
@@ -208,7 +208,7 @@ class NexusRtcIntegrationTest extends TestCase
      */
     public function test_adversarial_guest_privilege_escalation_and_eviction(): void
     {
-        $baseUrl = config('nexusrtc.base_url', 'http://127.0.0.1:4000');
+        $baseUrl = config('webrtc.base_url', config('nexusrtc.base_url', 'http://127.0.0.1:4000'));
 
         // 1. Host creates a room
         $createRes = $this->post('/meetings', [
@@ -239,7 +239,7 @@ class NexusRtcIntegrationTest extends TestCase
         $this->assertNotContains('moderation:kick_participants', $guestParticipant['permissions']);
 
         // 3. Untrusted guest attempts to hijack Host's ID via token endpoint
-        $apiKey = config('nexusrtc.api_key', 'nexusrtc-master-api-key');
+        $apiKey = config('webrtc.api_key', config('nexusrtc.api_key', 'webrtc-master-api-key'));
         $hijackRes = \Illuminate\Support\Facades\Http::withHeaders(['X-API-Key' => $apiKey])
             ->post("{$baseUrl}/api/v1/rooms/{$slug}/token", [
                 'name' => 'Host Impersonator',

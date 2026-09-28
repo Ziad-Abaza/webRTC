@@ -5,7 +5,7 @@ import {
   IStorageProvider,
   Recording,
   RecordingStatus
-} from '@nexusrtc/core';
+} from '@webrtc/core';
 
 export class RecordingService {
   constructor(
@@ -50,7 +50,7 @@ export class RecordingService {
     // Create a mock/sample recorded media stream payload stored in the storage provider for end-to-end integration proof
     const storageKey = `recordings/${recording.roomId}/${recording.id}.mp4`;
     const mockMp4Payload = Buffer.from(
-      `NexusRTC MP4 Media Container Header - Room: ${recording.roomId}, Duration: ${durationSeconds}s, Timestamp: ${new Date().toISOString()}`
+      `WebRTC MP4 Media Container Header - Room: ${recording.roomId}, Duration: ${durationSeconds}s, Timestamp: ${new Date().toISOString()}`
     );
 
     const uploaded = await this.storageProvider.upload(storageKey, mockMp4Payload, 'video/mp4', {

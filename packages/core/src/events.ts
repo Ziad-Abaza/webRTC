@@ -3,59 +3,61 @@ import { Participant, ChatMessage, BreakoutRoom, Recording, LiveBroadcastConfig 
 /**
  * Standard WebSocket Events between Engine Server and Clients (Web/Flutter/etc).
  */
-export enum NexusEvents {
+export enum WebRTCEvents {
   // Connection / Session
-  JOIN = 'nexus:join',
-  JOINED = 'nexus:joined',
-  LEAVE = 'nexus:leave',
-  LEFT = 'nexus:left',
-  ERROR = 'nexus:error',
+  JOIN = 'webrtc:join',
+  JOINED = 'webrtc:joined',
+  LEAVE = 'webrtc:leave',
+  LEFT = 'webrtc:left',
+  ERROR = 'webrtc:error',
 
   // Participant Presence & State
-  PARTICIPANT_JOINED = 'nexus:participant_joined',
-  PARTICIPANT_LEFT = 'nexus:participant_left',
-  PARTICIPANT_UPDATED = 'nexus:participant_updated',
+  PARTICIPANT_JOINED = 'webrtc:participant_joined',
+  PARTICIPANT_LEFT = 'webrtc:participant_left',
+  PARTICIPANT_UPDATED = 'webrtc:participant_updated',
 
   // Media & Controls
-  MEDIA_STATE_CHANGED = 'nexus:media_state_changed',
-  SCREEN_SHARE_STARTED = 'nexus:screen_share_started',
-  SCREEN_SHARE_STOPPED = 'nexus:screen_share_stopped',
+  MEDIA_STATE_CHANGED = 'webrtc:media_state_changed',
+  SCREEN_SHARE_STARTED = 'webrtc:screen_share_started',
+  SCREEN_SHARE_STOPPED = 'webrtc:screen_share_stopped',
 
   // Raise Hand
-  HAND_RAISED = 'nexus:hand_raised',
-  HAND_LOWERED = 'nexus:hand_lowered',
+  HAND_RAISED = 'webrtc:hand_raised',
+  HAND_LOWERED = 'webrtc:hand_lowered',
 
   // Moderation & Permissions
-  MODERATE_PARTICIPANT = 'nexus:moderate_participant',
-  PARTICIPANT_MODERATED = 'nexus:participant_moderated',
-  ROOM_MUTED_ALL = 'nexus:room_muted_all',
-  UPDATE_PERMISSIONS = 'nexus:update_permissions',
-  PERMISSIONS_UPDATED = 'nexus:permissions_updated',
-  LOCKS_CHANGED = 'nexus:locks_changed',
+  MODERATE_PARTICIPANT = 'webrtc:moderate_participant',
+  PARTICIPANT_MODERATED = 'webrtc:participant_moderated',
+  ROOM_MUTED_ALL = 'webrtc:room_muted_all',
+  UPDATE_PERMISSIONS = 'webrtc:update_permissions',
+  PERMISSIONS_UPDATED = 'webrtc:permissions_updated',
+  LOCKS_CHANGED = 'webrtc:locks_changed',
 
   // Chat
-  CHAT_SEND = 'nexus:chat_send',
-  CHAT_RECEIVED = 'nexus:chat_received',
+  CHAT_SEND = 'webrtc:chat_send',
+  CHAT_RECEIVED = 'webrtc:chat_received',
 
   // Recording
-  RECORDING_START = 'nexus:recording_start',
-  RECORDING_STOP = 'nexus:recording_stop',
-  RECORDING_STATE_CHANGED = 'nexus:recording_state_changed',
+  RECORDING_START = 'webrtc:recording_start',
+  RECORDING_STOP = 'webrtc:recording_stop',
+  RECORDING_STATE_CHANGED = 'webrtc:recording_state_changed',
 
   // Breakout Rooms
-  BREAKOUT_CREATE = 'nexus:breakout_create',
-  BREAKOUT_CREATED = 'nexus:breakout_created',
-  BREAKOUT_JOIN = 'nexus:breakout_join',
-  BREAKOUT_LEAVE = 'nexus:breakout_leave',
-  BREAKOUT_UPDATED = 'nexus:breakout_updated',
-  BREAKOUT_BROADCAST = 'nexus:breakout_broadcast', // host announcement to all sub-rooms
-  BREAKOUT_CLOSED = 'nexus:breakout_closed',
+  BREAKOUT_CREATE = 'webrtc:breakout_create',
+  BREAKOUT_CREATED = 'webrtc:breakout_created',
+  BREAKOUT_JOIN = 'webrtc:breakout_join',
+  BREAKOUT_LEAVE = 'webrtc:breakout_leave',
+  BREAKOUT_UPDATED = 'webrtc:breakout_updated',
+  BREAKOUT_BROADCAST = 'webrtc:breakout_broadcast', // host announcement to all sub-rooms
+  BREAKOUT_CLOSED = 'webrtc:breakout_closed',
 
   // Live Broadcast
-  BROADCAST_START = 'nexus:broadcast_start',
-  BROADCAST_STOP = 'nexus:broadcast_stop',
-  BROADCAST_STATE_CHANGED = 'nexus:broadcast_state_changed'
+  BROADCAST_START = 'webrtc:broadcast_start',
+  BROADCAST_STOP = 'webrtc:broadcast_stop',
+  BROADCAST_STATE_CHANGED = 'webrtc:broadcast_state_changed'
 }
+
+export { WebRTCEvents as NexusEvents };
 
 export interface JoinPayload {
   token: string;

@@ -1,7 +1,7 @@
-# Architecture & Implementation Roadmap: NexusRTC Engine & Integration
+# Architecture & Implementation Roadmap: WebRTC Engine & Integration
 
 ## 1. Product Vision & Architecture Overview
-**Product Name:** `NexusRTC` (Universal WebRTC Communication Engine)
+**Product Name:** `WebRTC` (Universal WebRTC Communication Engine)
 **Core Mission:** A production-grade, framework-agnostic real-time communication platform designed as reusable infrastructure for web and mobile stacks (Laravel, Node.js, React, Vue, Flutter via REST/WS).
 
 ### Architecture Principles:
@@ -9,12 +9,12 @@
    - **Media Provider Abstraction:** Interface `IMediaProvider` with initial high-performance Jitsi implementation (JWT token generation, Jitsi Meet iframe API config wrapper, room bridge options) and Native WebRTC SFU/Mesh bridge adapter interface (e.g. Mediasoup/LiveKit/P2P fallback ready).
    - **Storage Abstraction:** Interface `IStorageProvider` (Local FS, S3/MinIO compatible) for recordings and media assets.
    - **Database / State Abstraction:** Interface `IDatabaseAdapter` (SQLite/PostgreSQL/MySQL/In-Memory) for persistent rooms, participants, recordings, chat logs, and breakout sessions.
-2. **Framework-Agnostic Web Client SDK (`@nexusrtc/client`):**
+2. **Framework-Agnostic Web Client SDK (`@webrtc/client` / `@nexusrtc/client` legacy alias):**
    - Pure TypeScript, zero framework dependencies.
    - Works in Vanilla JS, React, Vue, Angular, Svelte, or embedded webviews in mobile (Flutter/React Native).
    - Emits standardized typed events (`participant-joined`, `screen-share-changed`, `chat-message`, `hand-raise`, `breakout-room-moved`, etc.).
    - Embeds and controls Jitsi or native video grids with custom UI overlays or complete headless UI control.
-3. **Standalone Backend Engine Server (`@nexusrtc/server`):**
+3. **Standalone Backend Engine Server (`@webrtc/server`):**
    - High-performance Node.js/TypeScript REST API & WebSocket Signaling Server.
    - JWT authentication, role-based access control (Host, Moderator, Participant, Viewer/Listener for broadcasts).
    - Core capabilities:
@@ -26,11 +26,11 @@
      - Breakout Rooms (create sub-rooms, assign participants, auto-return, broadcast announcement to all breakout rooms)
      - Live Broadcasting (RTMP streaming endpoints, viewer-only low-latency mode)
      - Webhook system to dispatch real-time events to upstream customer backends (e.g. Laravel).
-4. **PHP / Laravel Client Package (`nexusrtc/laravel-client`):**
+4. **PHP / Laravel Client Package (`webrtc/client` / `nexusrtc/client` legacy alias):**
    - Composer-ready SDK for Laravel.
    - Room management, token issuance (JWT signing / engine API), webhook verification, Blade/Vue helper directives.
-5. **Laravel Integration Proof Application (`demo-laravel-app`):**
-   - A standalone Laravel application that consumes `nexusrtc/laravel-client` and `@nexusrtc/client`.
+5. **Laravel Integration Proof Application (`laravel-demo`):**
+   - A standalone Laravel application that consumes `webrtc/client` and `@webrtc/client`.
    - Exercises end-to-end flows: Auth, room creation, joining, multi-participant video, screen sharing, chat, hand raise, breakout rooms, recording, and live broadcasting.
 
 ---
@@ -38,15 +38,15 @@
 ## 2. Directory Structure
 
 ```
-nexusrtc/
+webrtc/
 ├── packages/
-│   ├── core/                  # Shared types, interfaces, validations, contracts
+│   ├── core/                  # Shared types, interfaces, validations, contracts (@webrtc/core)
 │   │   ├── src/
 │   │   │   ├── types/         # Room, Participant, Chat, Breakout, Recording, Broadcast
 │   │   │   ├── interfaces/    # IMediaProvider, IDatabaseAdapter, IStorageProvider
 │   │   │   └── index.ts
 │   │   └── package.json
-│   ├── server/                # Standalone Engine Server (REST + WebSocket)
+│   ├── server/                # Standalone Engine Server (REST + WebSocket) (@webrtc/server)
 │   │   ├── src/
 │   │   │   ├── config/        # Environment and provider configs
 │   │   │   ├── db/            # Database abstraction & adapters (SQLite, Memory, PostgreSQL)
@@ -59,30 +59,30 @@ nexusrtc/
 │   │   │   └── index.ts
 │   │   ├── tests/             # Unit and integration test suite
 │   │   └── package.json
-│   └── client/                # Framework-agnostic TypeScript Client SDK
+│   └── client/                # Framework-agnostic TypeScript Client SDK (@webrtc/client)
 │       ├── src/
-│       │   ├── NexusClient.ts # Main client orchestrator
+│       │   ├── WebRTCClient.ts # Main client orchestrator
 │       │   ├── MediaManager.ts# Jitsi wrapper + WebRTC controls
 │       │   ├── ChatManager.ts # Real-time chat & history
 │       │   ├── BreakoutManager.ts # Breakout rooms coordination
 │       │   ├── ui/            # UI components / embeddable room container
 │       │   └── index.ts
-│       ├── rollup.config.js   # ESM + UMD bundle for browser / CDN usage
+│       ├── rollup.config.js   # ESM + UMD bundle for browser / CDN usage (dist/webrtc.bundle.js)
 │       └── package.json
 ├── sdk/
-│   └── php/                   # Composer package `nexusrtc/client`
+│   └── php/                   # Composer package `webrtc/client`
 │       ├── src/
-│       │   ├── NexusRtcClient.php
-│       │   ├── Exceptions/
+│       │   ├── WebRtcClient.php (aliased by NexusRtcClient)
+│       │   ├── Exceptions/    # WebRtcException, etc.
 │       │   ├── Models/
 │       │   └── Laravel/
-│       │       ├── NexusRtcServiceProvider.php
-│       │       └── Facades/NexusRtc.php
+│       │       ├── WebRtcServiceProvider.php
+│       │       └── Facades/WebRTC.php
 │       └── composer.json
 ├── apps/
 │   └── laravel-demo/          # Independent Laravel application demonstrating end-to-end integration
 │       ├── app/Http/Controllers/MeetingController.php
-│       ├── resources/views/meeting.blade.php
+│       ├── resources/views/meetings/
 │       └── ...
 └── docs/                      # Comprehensive API, SDK, and integration documentation
 ```
