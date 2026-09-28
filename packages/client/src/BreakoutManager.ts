@@ -20,6 +20,7 @@ export class BreakoutManager extends EventEmitter {
   handleBreakoutCreated(breakout: BreakoutRoom): void {
     this.breakoutRooms.set(breakout.id, breakout);
     this.emit('created', breakout);
+    this.emit('breakoutCreated', breakout);
     this.emit('updated', this.getBreakoutRooms());
   }
 
@@ -50,6 +51,10 @@ export class BreakoutManager extends EventEmitter {
 
   getBreakoutRooms(): BreakoutRoom[] {
     return Array.from(this.breakoutRooms.values());
+  }
+
+  getBreakouts(): BreakoutRoom[] {
+    return this.getBreakoutRooms();
   }
 
   getCurrentBreakoutRoomId(): string | null {

@@ -122,3 +122,27 @@ export interface MediaTokenResult {
   domain: string;
   appId?: string;
 }
+
+export type InvitationStatus = 'active' | 'revoked' | 'expired';
+
+export interface RoomInvitation {
+  id: string;
+  code: string;
+  roomId: string;
+  roomSlug: string;
+  role: ParticipantRole; // Strictly 'participant' | 'viewer'
+  createdBy: string;
+  maxUses?: number | null;
+  usesCount: number;
+  expiresAt?: number | null;
+  status: InvitationStatus;
+  createdAt: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateInvitationInput {
+  role?: ParticipantRole;
+  maxUses?: number | null;
+  expiresInSeconds?: number | null;
+  metadata?: Record<string, unknown>;
+}

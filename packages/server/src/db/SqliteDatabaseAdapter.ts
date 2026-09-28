@@ -6,7 +6,8 @@ import {
   ChatMessage,
   Recording,
   BreakoutRoom,
-  LiveBroadcastConfig
+  LiveBroadcastConfig,
+  RoomInvitation
 } from '@nexusrtc/core';
 import path from 'path';
 import fs from 'fs';
@@ -127,6 +128,25 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
         error TEXT,
         FOREIGN KEY (roomId) REFERENCES rooms (id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS room_invitations (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        roomId TEXT NOT NULL,
+        roomSlug TEXT NOT NULL,
+        role TEXT NOT NULL,
+        createdBy TEXT NOT NULL,
+        maxUses INTEGER,
+        usesCount INTEGER NOT NULL DEFAULT 0,
+        expiresAt INTEGER,
+        status TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        metadata TEXT,
+        FOREIGN KEY (roomId) REFERENCES rooms (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_room_invitations_code ON room_invitations (code);
+      CREATE INDEX IF NOT EXISTS idx_room_invitations_room ON room_invitations (roomId);
     `);
 
     // Ensure columns exist if table was already created in earlier version
@@ -621,6 +641,104 @@ export class SqliteDatabaseAdapter implements IDatabaseAdapter {
       createdAt: row.createdAt,
       durationMinutes: row.durationMinutes || undefined,
       isActive: row.isActive === 1
+    };
+  }
+
+  // Invitation operations
+  async createInvitation(invitation: RoomInvitation): Promise<RoomInvitation> {
+    const stmt = this.db.prepare(`
+      INSERT INTO room_invitations (
+        id, code, roomId, roomSlug, role, createdBy, maxUses, usesCount, expiresAt, status, createdAt, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      invitation.id,
+      invitation.code,
+      invitation.roomId,
+      invitation.roomSlug,
+      invitation.role,
+      invitation.createdBy,
+      invitation.maxUses ?? null,
+      invitation.usesCount || 0,
+      invitation.expiresAt ?? null,
+      invitation.status,
+      invitation.createdAt,
+      invitation.metadata ? JSON.stringify(invitation.metadata) : null
+    );
+
+    return { ...invitation };
+  }
+
+  async getInvitationByCode(code: string): Promise<RoomInvitation | null> {
+    const stmt = this.db.prepare('SELECT * FROM room_invitations WHERE code = ?');
+    const row = stmt.get(code);
+    return row ? this.mapInvitationRow(row) : null;
+  }
+
+  async getInvitationById(id: string): Promise<RoomInvitation | null> {
+    const stmt = this.db.prepare('SELECT * FROM room_invitations WHERE id = ?');
+    const row = stmt.get(id);
+    return row ? this.mapInvitationRow(row) : null;
+  }
+
+  async listInvitations(roomId: string): Promise<RoomInvitation[]> {
+    const stmt = this.db.prepare('SELECT * FROM room_invitations WHERE roomId = ? ORDER BY createdAt DESC');
+    const rows = stmt.all(roomId);
+    return rows.map((row) => this.mapInvitationRow(row));
+  }
+
+  async updateInvitation(id: string, updates: Partial<RoomInvitation>): Promise<RoomInvitation> {
+    const existing = await this.getInvitationById(id);
+    if (!existing) throw new Error(`Invitation ${id} not found`);
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.usesCount !== undefined) {
+      fields.push('usesCount = ?');
+      values.push(updates.usesCount);
+    }
+    if (updates.status !== undefined) {
+      fields.push('status = ?');
+      values.push(updates.status);
+    }
+    if (updates.expiresAt !== undefined) {
+      fields.push('expiresAt = ?');
+      values.push(updates.expiresAt ?? null);
+    }
+    if (updates.metadata !== undefined) {
+      fields.push('metadata = ?');
+      values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
+    }
+
+    if (fields.length > 0) {
+      values.push(id);
+      const stmt = this.db.prepare(`UPDATE room_invitations SET ${fields.join(', ')} WHERE id = ?`);
+      stmt.run(...values);
+    }
+
+    return (await this.getInvitationById(id))!;
+  }
+
+  async revokeInvitation(id: string): Promise<RoomInvitation> {
+    return this.updateInvitation(id, { status: 'revoked' });
+  }
+
+  private mapInvitationRow(row: any): RoomInvitation {
+    return {
+      id: row.id,
+      code: row.code,
+      roomId: row.roomId,
+      roomSlug: row.roomSlug,
+      role: row.role,
+      createdBy: row.createdBy,
+      maxUses: row.maxUses !== null && row.maxUses !== undefined ? row.maxUses : null,
+      usesCount: row.usesCount || 0,
+      expiresAt: row.expiresAt !== null && row.expiresAt !== undefined ? row.expiresAt : null,
+      status: row.status,
+      createdAt: row.createdAt,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
     };
   }
 }

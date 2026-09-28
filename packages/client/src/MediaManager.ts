@@ -12,6 +12,8 @@ export interface MediaConfig {
   domain: string;
   room: string;
   token?: string;
+  role?: string;
+  permissions?: string[];
   parentNode?: HTMLElement | string;
   width?: string | number;
   height?: string | number;
@@ -42,10 +44,32 @@ export class MediaManager extends EventEmitter {
       return;
     }
 
+    const isHost = config.role === 'host' || config.role === 'moderator';
+    const perms = config.permissions || [];
+    const hasPerm = (p: string) => perms.includes(p);
+
+    const toolbarButtons = [
+      'fullscreen', 'fodeviceselection', 'hangup', 'profile',
+      'videoquality', 'filmstrip', 'feedback', 'stats', 'shortcuts',
+      'tileview', 'videobackgroundblur', 'download', 'help'
+    ];
+
+    if (isHost || hasPerm('media:send_audio')) toolbarButtons.push('microphone');
+    if (isHost || hasPerm('media:send_video')) toolbarButtons.push('camera');
+    if (isHost || hasPerm('media:share_screen')) toolbarButtons.push('desktop');
+    if (isHost || hasPerm('chat:send')) toolbarButtons.push('chat');
+    if (isHost || hasPerm('interaction:raise_hand')) toolbarButtons.push('raisehand');
+    
+    // Host/moderator only controls - never exposed to regular invited participants
+    if (isHost || hasPerm('session:start_recording')) toolbarButtons.push('recording');
+    if (isHost || hasPerm('session:start_broadcast')) toolbarButtons.push('livestreaming');
+    if (isHost || hasPerm('moderation:mute_others')) toolbarButtons.push('mute-everyone');
+    if (isHost || hasPerm('session:update_permissions')) toolbarButtons.push('security');
+
     const options: any = {
       roomName: config.room,
       parentNode: container,
-      jwt: config.token,
+      ...(config.token ? { jwt: config.token } : {}),
       width: config.width || '100%',
       height: config.height || '100%',
       configOverwrite: {
@@ -53,18 +77,22 @@ export class MediaManager extends EventEmitter {
         startWithVideoMuted: true,
         prejoinPageEnabled: false,
         disableDeepLinking: true,
+        remoteVideoMenu: {
+          disableKick: !isHost,
+          disableGrantModerator: !isHost,
+          disablePrivateChat: !hasPerm('chat:send_private'),
+        },
+        disableRemoteMute: !isHost && !hasPerm('moderation:mute_others'),
+        participantsPane: {
+          hideMoreActionsButton: !isHost,
+          hideMuteAllButton: !isHost && !hasPerm('moderation:mute_others'),
+        },
         ...config.configOverwrite
       },
       interfaceConfigOverwrite: {
         SHOW_JITSI_WATERMARK: false,
         SHOW_WATERMARK_FOR_GUESTS: false,
-        TOOLBAR_BUTTONS: [
-          'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-          'fodeviceselection', 'hangup', 'profile', 'chat', 'recording',
-          'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
-          'videoquality', 'filmstrip', 'invite', 'feedback', 'stats', 'shortcuts',
-          'tileview', 'videobackgroundblur', 'download', 'help', 'mute-everyone', 'security'
-        ],
+        TOOLBAR_BUTTONS: toolbarButtons,
         ...config.interfaceConfigOverwrite
       }
     };

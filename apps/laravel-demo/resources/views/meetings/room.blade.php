@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $room->title }} - NexusRTC Room</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,7 +28,7 @@
             </span>
         </div>
 
-        <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-3">
             <div id="recording-badge" class="hidden items-center space-x-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
                 <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
                 <span>REC</span>
@@ -38,6 +39,13 @@
                 <span class="font-semibold text-indigo-400">{{ $participant['name'] }}</span>
                 <span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono uppercase text-[10px]">{{ $participant['role'] }}</span>
             </div>
+
+            @if(!empty($isHost) || $participant['role'] === 'host')
+            <button id="btn-open-invite-modal" class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center space-x-1.5 shadow-sm shadow-indigo-600/30 active:scale-95">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                <span>Invite</span>
+            </button>
+            @endif
 
             <a href="{{ route('meetings.index') }}" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
                 Exit Room
@@ -125,9 +133,41 @@
                 </div>
 
                 <!-- Participants Panel -->
-                <div id="panel-participants" class="hidden flex-1 overflow-y-auto p-4 space-y-2">
-                    <div id="participants-list" class="space-y-2">
-                        <!-- Populated by JS SDK -->
+                <div id="panel-participants" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+                    <div id="host-controls" class="hidden p-3 rounded-lg bg-slate-800/80 border border-slate-700 space-y-2 text-xs">
+                        <span class="font-bold text-slate-300 uppercase tracking-wider block text-[10px]">Room Security & Locks</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="btn-lock-mics" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-[11px] font-medium transition text-center">
+                                Lock All Mics
+                            </button>
+                            <button id="btn-lock-cams" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-[11px] font-medium transition text-center">
+                                Lock All Cameras
+                            </button>
+                            <button id="btn-lock-screen" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-[11px] font-medium transition text-center">
+                                Lock Screen Share
+                            </button>
+                            <button id="btn-lock-chat" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-[11px] font-medium transition text-center">
+                                Lock Chat
+                            </button>
+                        </div>
+                    </div>
+                    @if(!empty($isHost) || $participant['role'] === 'host')
+                    <div class="p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between">
+                        <div>
+                            <span class="font-semibold text-slate-200 text-xs block">Invite People</span>
+                            <span class="text-[10px] text-slate-400 block">Share secure link with guests</span>
+                        </div>
+                        <button id="btn-quick-invite" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold transition active:scale-95">
+                            + Invite
+                        </button>
+                    </div>
+                    @endif
+
+                    <div>
+                        <span class="font-bold text-slate-400 uppercase tracking-wider block text-[11px] mb-2">Participant List</span>
+                        <div id="participants-list" class="space-y-2">
+                            <!-- Populated by JS SDK -->
+                        </div>
                     </div>
                 </div>
 
@@ -155,6 +195,112 @@
             </div>
         </aside>
 
+    </div>
+
+    <!-- Invitation Modal -->
+    <div id="invite-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                    <h3 class="font-bold text-white text-sm">Invite to {{ $room->title }}</h3>
+                </div>
+                <button id="btn-close-invite-modal" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Modal Tabs -->
+            <div class="flex border-b border-slate-800 text-xs font-semibold px-6 bg-slate-950/40">
+                <button id="invite-tab-create" class="py-3 border-b-2 border-indigo-500 text-indigo-400 mr-6">
+                    Create New Link
+                </button>
+                <button id="invite-tab-manage" class="py-3 text-slate-400 hover:text-slate-200">
+                    Active Invitations (<span id="modal-invitations-count">0</span>)
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-5 text-xs">
+                <!-- Panel 1: Create Invitation -->
+                <div id="invite-panel-create" class="space-y-4">
+                    <div>
+                        <label class="block font-semibold text-slate-300 uppercase tracking-wider text-[11px] mb-2">Participant Access Role</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex flex-col p-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 cursor-pointer transition">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-bold text-slate-200 text-xs">Participant</span>
+                                    <input type="radio" name="invite-role" value="participant" checked class="text-indigo-600 focus:ring-indigo-500">
+                                </div>
+                                <span class="text-[11px] text-slate-400">Can speak, show camera, and use group chat.</span>
+                            </label>
+
+                            <label class="flex flex-col p-3 rounded-xl border border-slate-700 bg-slate-800/60 cursor-pointer transition">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-bold text-slate-200 text-xs">Viewer</span>
+                                    <input type="radio" name="invite-role" value="viewer" class="text-indigo-600 focus:ring-indigo-500">
+                                </div>
+                                <span class="text-[11px] text-slate-400">Read-only attendee. Mic & camera disabled.</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-semibold text-slate-300 uppercase tracking-wider text-[11px] mb-2">Link Expiration</label>
+                            <select id="invite-expiry" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-1 focus:ring-indigo-500">
+                                <option value="3600">Expires in 1 hour</option>
+                                <option value="86400" selected>Expires in 24 hours</option>
+                                <option value="604800">Expires in 7 days</option>
+                                <option value="">No Expiration</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-slate-300 uppercase tracking-wider text-[11px] mb-2">Usage Limit</label>
+                            <select id="invite-max-uses" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-1 focus:ring-indigo-500">
+                                <option value="" selected>Unlimited Joins</option>
+                                <option value="1">Single-Use (1 Person)</option>
+                                <option value="5">Up to 5 Persons</option>
+                                <option value="10">Up to 10 Persons</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button id="btn-generate-invite" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition flex items-center justify-center space-x-2 active:scale-98">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                        <span>Generate Invitation Link</span>
+                    </button>
+
+                    <!-- Generated Link Result Container -->
+                    <div id="invite-result-box" class="hidden p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-emerald-400 font-semibold flex items-center space-x-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span>Link Generated Successfully</span>
+                            </span>
+                            <span id="invite-result-role-badge" class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-indigo-500/20 text-indigo-300">
+                                PARTICIPANT
+                            </span>
+                        </div>
+                        <div class="flex space-x-2">
+                            <input id="invite-url-input" type="text" readonly
+                                class="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-xs font-mono focus:outline-none select-all">
+                            <button id="btn-copy-invite-url" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center space-x-1">
+                                <span id="copy-btn-text">Copy</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel 2: Manage Active Invitations -->
+                <div id="invite-panel-manage" class="hidden space-y-3">
+                    <div id="invitations-list-container" class="space-y-2">
+                        <p class="text-slate-500 italic text-center py-4">No invitations created yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Load Client Bundle -->
@@ -198,6 +344,7 @@
                 token: config.token,
                 autoConnect: true
             });
+            window.NexusClientInstance = client;
 
             // WebSocket Connection Events
             client.on('connected', () => console.log('[NexusRTC] Connected to signaling gateway'));
@@ -214,7 +361,9 @@
                     provider: data.media.provider,
                     domain: data.media.domain,
                     room: data.media.room,
-                    token: data.media.token
+                    token: data.media.token || config.media.token,
+                    role: client.getSelf()?.role || config.self.role,
+                    permissions: client.getEffectivePermissions()
                 });
             });
 
@@ -270,6 +419,7 @@
                 const canChat = client.hasPermission('chat:send');
                 const canRecord = client.hasPermission('session:start_recording');
                 const canBreakout = client.hasPermission('breakout:create');
+                const canUpdatePermissions = client.hasPermission('session:update_permissions');
 
                 const btnMic = document.getElementById('btn-toggle-mic');
                 const btnCam = document.getElementById('btn-toggle-cam');
@@ -277,6 +427,7 @@
                 const chatInput = document.getElementById('chat-input');
                 const btnRecord = document.getElementById('btn-toggle-recording');
                 const btnBreakout = document.getElementById('btn-create-breakout');
+                const hostControls = document.getElementById('host-controls');
 
                 if (btnMic) {
                     btnMic.disabled = !canAudio;
@@ -324,6 +475,12 @@
                 if (btnBreakout) {
                     btnBreakout.disabled = !canBreakout;
                 }
+
+                if (hostControls) {
+                    hostControls.classList.toggle('hidden', !canUpdatePermissions);
+                }
+
+                updateParticipantsList(client.getParticipants());
             }
 
             client.on('joined', () => {
@@ -340,8 +497,65 @@
                 });
             });
 
+            let currentLocks = {};
             client.on('locksChanged', (payload) => {
+                currentLocks = payload.locks || {};
+                updateLockButtonsUI();
                 applyPermissionsToUI();
+            });
+
+            function updateLockButtonsUI() {
+                const btnMic = document.getElementById('btn-lock-mics');
+                const btnCam = document.getElementById('btn-lock-cams');
+                const btnScreen = document.getElementById('btn-lock-screen');
+                const btnChat = document.getElementById('btn-lock-chat');
+
+                if (btnMic) btnMic.textContent = currentLocks.lockMicrophones ? 'Unlock All Mics' : 'Lock All Mics';
+                if (btnCam) btnCam.textContent = currentLocks.lockCameras ? 'Unlock All Cameras' : 'Lock All Cameras';
+                if (btnScreen) btnScreen.textContent = currentLocks.lockScreenshare ? 'Unlock Screen' : 'Lock Screen';
+                if (btnChat) btnChat.textContent = currentLocks.lockChat ? 'Unlock Chat' : 'Lock Chat';
+            }
+
+            document.getElementById('btn-lock-mics')?.addEventListener('click', () => {
+                currentLocks.lockMicrophones = !currentLocks.lockMicrophones;
+                client.updateRoomPermissions(null, currentLocks);
+            });
+            document.getElementById('btn-lock-cams')?.addEventListener('click', () => {
+                currentLocks.lockCameras = !currentLocks.lockCameras;
+                client.updateRoomPermissions(null, currentLocks);
+            });
+            document.getElementById('btn-lock-screen')?.addEventListener('click', () => {
+                currentLocks.lockScreenshare = !currentLocks.lockScreenshare;
+                client.updateRoomPermissions(null, currentLocks);
+            });
+            document.getElementById('btn-lock-chat')?.addEventListener('click', () => {
+                currentLocks.lockChat = !currentLocks.lockChat;
+                client.updateRoomPermissions(null, currentLocks);
+            });
+
+            // Handle Moderation actions directed at self
+            client.on('moderated', (payload) => {
+                const self = client.getSelf();
+                if (payload.targetParticipantId === self?.id) {
+                    if (payload.action === 'kick') {
+                        alert('You have been removed from the session by the host.');
+                        window.location.href = "{{ route('meetings.index') }}";
+                    } else if (payload.action === 'mute-audio') {
+                        client.media.muteAudio(true);
+                        appendChatMessage({
+                            senderName: 'System Notice',
+                            content: 'Your microphone was muted by a session moderator.',
+                            timestamp: Date.now()
+                        });
+                    } else if (payload.action === 'mute-video') {
+                        client.media.muteVideo(true);
+                        appendChatMessage({
+                            senderName: 'System Notice',
+                            content: 'Your camera was disabled by a session moderator.',
+                            timestamp: Date.now()
+                        });
+                    }
+                }
             });
 
             // Recording Sync
@@ -418,18 +632,57 @@
                 if (counter) counter.textContent = list.length;
                 if (!container) return;
 
-                container.innerHTML = list.map(p => `
-                    <div class="p-3 rounded-lg bg-slate-800/80 border border-slate-700 flex items-center justify-between">
-                        <div>
-                            <span class="font-semibold text-slate-200">${p.name}</span>
-                            <span class="text-[10px] text-slate-400 block">${p.role}</span>
+                const self = client.getSelf();
+                const canMuteOthers = client.hasPermission('moderation:mute_others');
+                const canKickOthers = client.hasPermission('moderation:kick_participants');
+
+                container.innerHTML = list.map(p => {
+                    const isSelf = p.id === self?.id;
+                    const isTargetHost = p.role === 'host' || p.id === config.room.hostId;
+                    const isTargetModerator = p.role === 'moderator';
+                    const callerIsHost = self?.role === 'host' || self?.id === config.room.hostId;
+
+                    let actionsHtml = '';
+                    // Host has absolute immunity from moderation.
+                    // If target is a moderator, ONLY the room host can moderate them.
+                    // Non-privileged participants cannot moderate any participant.
+                    if (!isSelf && !isTargetHost && (!isTargetModerator || callerIsHost)) {
+                        if (canMuteOthers) {
+                            actionsHtml += `<button onclick="window.NexusClientInstance.moderateParticipant('${p.id}', 'mute-audio')" class="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 rounded text-[10px] font-medium transition mr-1">Mute</button>`;
+                        }
+                        if (canKickOthers) {
+                            actionsHtml += `<button onclick="window.NexusClientInstance.moderateParticipant('${p.id}', 'kick')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded text-[10px] font-medium transition">Kick</button>`;
+                        }
+                    }
+
+                    let roleBadge = '';
+                    if (isTargetHost) {
+                        roleBadge = '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] uppercase font-bold border border-amber-500/30">Host</span>';
+                    } else if (p.role === 'moderator') {
+                        roleBadge = '<span class="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[9px] uppercase font-bold border border-indigo-500/30">Moderator</span>';
+                    } else if (p.role === 'viewer') {
+                        roleBadge = '<span class="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono text-[9px] uppercase font-bold border border-blue-500/30">Viewer</span>';
+                    } else {
+                        roleBadge = '<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] uppercase font-bold border border-emerald-500/30">Participant</span>';
+                    }
+
+                    return `
+                        <div class="p-3 rounded-lg bg-slate-800/80 border border-slate-700 flex items-center justify-between">
+                            <div>
+                                <div class="flex items-center space-x-1.5 mb-1">
+                                    <span class="font-semibold text-slate-200 text-xs">${p.name} ${isSelf ? '<span class="text-indigo-400 font-normal">(You)</span>' : ''}</span>
+                                    ${roleBadge}
+                                </div>
+                                <span class="text-[10px] text-slate-400 block">${p.role === 'viewer' ? 'Read-only attendee' : (p.role === 'host' ? 'Meeting Host' : 'Interactive attendee')}</span>
+                            </div>
+                            <div class="flex items-center space-x-2 text-xs">
+                                ${p.isHandRaised ? '<span>✋</span>' : ''}
+                                <span class="w-2 h-2 rounded-full ${p.isAudioMuted ? 'bg-rose-500' : 'bg-emerald-500'}" title="${p.isAudioMuted ? 'Muted' : 'Unmuted'}"></span>
+                                ${actionsHtml}
+                            </div>
                         </div>
-                        <div class="flex items-center space-x-2 text-xs">
-                            ${p.isHandRaised ? '<span>✋</span>' : ''}
-                            <span class="w-2 h-2 rounded-full ${p.isAudioMuted ? 'bg-rose-500' : 'bg-emerald-500'}"></span>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
 
             function appendChatMessage(msg) {
@@ -476,6 +729,220 @@
                     </div>
                 `).join('');
             }
+
+            // Invitation Flow & Modal Management
+            const inviteModal = document.getElementById('invite-modal');
+            const btnOpenInvite = document.getElementById('btn-open-invite-modal');
+            const btnQuickInvite = document.getElementById('btn-quick-invite');
+            const btnCloseInvite = document.getElementById('btn-close-invite-modal');
+            const inviteTabCreate = document.getElementById('invite-tab-create');
+            const inviteTabManage = document.getElementById('invite-tab-manage');
+            const invitePanelCreate = document.getElementById('invite-panel-create');
+            const invitePanelManage = document.getElementById('invite-panel-manage');
+            const btnGenerateInvite = document.getElementById('btn-generate-invite');
+            const inviteResultBox = document.getElementById('invite-result-box');
+            const inviteUrlInput = document.getElementById('invite-url-input');
+            const btnCopyInviteUrl = document.getElementById('btn-copy-invite-url');
+            const copyBtnText = document.getElementById('copy-btn-text');
+            const invitationsCountBadge = document.getElementById('modal-invitations-count');
+            const invitationsListContainer = document.getElementById('invitations-list-container');
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            function openInviteModal() {
+                if (inviteModal) {
+                    inviteModal.classList.remove('hidden');
+                    inviteModal.classList.add('flex');
+                    loadInvitations();
+                }
+            }
+
+            function closeInviteModal() {
+                if (inviteModal) {
+                    inviteModal.classList.add('hidden');
+                    inviteModal.classList.remove('flex');
+                }
+            }
+
+            btnOpenInvite?.addEventListener('click', openInviteModal);
+            btnQuickInvite?.addEventListener('click', openInviteModal);
+            btnCloseInvite?.addEventListener('click', closeInviteModal);
+
+            inviteModal?.addEventListener('click', (e) => {
+                if (e.target === inviteModal) closeInviteModal();
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && inviteModal && !inviteModal.classList.contains('hidden')) {
+                    closeInviteModal();
+                }
+            });
+
+            function switchInviteTab(activeTab, activePanel) {
+                [inviteTabCreate, inviteTabManage].forEach(t => {
+                    t.className = 'py-3 text-slate-400 hover:text-slate-200 font-semibold';
+                });
+                [invitePanelCreate, invitePanelManage].forEach(p => p.classList.add('hidden'));
+
+                activeTab.className = 'py-3 border-b-2 border-indigo-500 text-indigo-400 font-semibold mr-6';
+                activePanel.classList.remove('hidden');
+            }
+
+            inviteTabCreate?.addEventListener('click', () => switchInviteTab(inviteTabCreate, invitePanelCreate));
+            inviteTabManage?.addEventListener('click', () => {
+                switchInviteTab(inviteTabManage, invitePanelManage);
+                loadInvitations();
+            });
+
+            btnGenerateInvite?.addEventListener('click', async () => {
+                const roleInput = document.querySelector('input[name="invite-role"]:checked');
+                const expiryInput = document.getElementById('invite-expiry');
+                const maxUsesInput = document.getElementById('invite-max-uses');
+
+                const role = roleInput ? roleInput.value : 'participant';
+                const expiresInSeconds = expiryInput && expiryInput.value ? parseInt(expiryInput.value, 10) : null;
+                const maxUses = maxUsesInput && maxUsesInput.value ? parseInt(maxUsesInput.value, 10) : null;
+
+                btnGenerateInvite.disabled = true;
+                btnGenerateInvite.textContent = 'Generating link...';
+
+                try {
+                    const res = await fetch(`/room/${config.room.slug}/invitations`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken
+                        },
+                        body: JSON.stringify({ role, expiresInSeconds, maxUses })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to generate invitation');
+
+                    if (inviteUrlInput) inviteUrlInput.value = data.joinUrl;
+                    const roleBadge = document.getElementById('invite-result-role-badge');
+                    if (roleBadge) {
+                        roleBadge.textContent = (data.role || role).toUpperCase();
+                        roleBadge.className = data.role === 'viewer'
+                            ? 'px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-blue-500/20 text-blue-300'
+                            : 'px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-emerald-500/20 text-emerald-300';
+                    }
+                    inviteResultBox?.classList.remove('hidden');
+                    loadInvitations();
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                } finally {
+                    btnGenerateInvite.disabled = false;
+                    btnGenerateInvite.innerHTML = '<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg><span>Generate Invitation Link</span>';
+                }
+            });
+
+            btnCopyInviteUrl?.addEventListener('click', async () => {
+                if (inviteUrlInput && inviteUrlInput.value) {
+                    try {
+                        await navigator.clipboard.writeText(inviteUrlInput.value);
+                        if (copyBtnText) copyBtnText.textContent = 'Copied!';
+                        btnCopyInviteUrl.classList.add('bg-emerald-600', 'text-white');
+                        setTimeout(() => {
+                            if (copyBtnText) copyBtnText.textContent = 'Copy';
+                            btnCopyInviteUrl.classList.remove('bg-emerald-600', 'text-white');
+                        }, 2000);
+                    } catch {
+                        inviteUrlInput.select();
+                        document.execCommand('copy');
+                        if (copyBtnText) copyBtnText.textContent = 'Copied!';
+                        setTimeout(() => {
+                            if (copyBtnText) copyBtnText.textContent = 'Copy';
+                        }, 2000);
+                    }
+                }
+            });
+
+            async function loadInvitations() {
+                try {
+                    const res = await fetch(`/room/${config.room.slug}/invitations`, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken
+                        }
+                    });
+                    if (!res.ok) return;
+                    const invitations = await res.json();
+
+                    if (invitationsCountBadge) invitationsCountBadge.textContent = invitations.length;
+                    if (!invitationsListContainer) return;
+
+                    if (invitations.length === 0) {
+                        invitationsListContainer.innerHTML = '<p class="text-slate-500 italic text-center py-4">No invitations created yet.</p>';
+                        return;
+                    }
+
+                    invitationsListContainer.innerHTML = invitations.map(inv => {
+                        const isExpired = inv.status === 'expired' || (inv.expiresAt && Date.now() > inv.expiresAt);
+                        const isRevoked = inv.status === 'revoked';
+                        const isActive = !isRevoked && !isExpired;
+
+                        let statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400">ACTIVE</span>';
+                        if (isRevoked) {
+                            statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-400">REVOKED</span>';
+                        } else if (isExpired) {
+                            statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400">EXPIRED</span>';
+                        }
+
+                        const roleBadge = inv.role === 'viewer'
+                            ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-500/20 text-blue-300">VIEWER</span>'
+                            : '<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300">PARTICIPANT</span>';
+
+                        const usesText = inv.maxUses ? `${inv.usesCount} / ${inv.maxUses} used` : `${inv.usesCount} joined`;
+                        const expiryText = inv.expiresAt ? `Expires: ${new Date(inv.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No expiry';
+
+                        return `
+                            <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-2">
+                                        ${roleBadge}
+                                        ${statusBadge}
+                                    </div>
+                                    <div class="flex items-center space-x-1">
+                                        <button onclick="navigator.clipboard.writeText('${inv.joinUrl}'); alert('Invitation link copied!');"
+                                            class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition">
+                                            Copy Link
+                                        </button>
+                                        ${isActive ? `
+                                            <button onclick="window.revokeInvite('${inv.code}')"
+                                                class="px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] transition">
+                                                Revoke
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                                    <span class="truncate max-w-[200px]" title="${inv.joinUrl}">${inv.joinUrl}</span>
+                                    <span>${usesText} • ${expiryText}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } catch (err) {
+                    console.error('Failed to load invitations:', err);
+                }
+            }
+
+            window.revokeInvite = async (code) => {
+                if (!confirm('Are you sure you want to revoke this invitation? Any user attempting to join with it will be rejected.')) return;
+                try {
+                    const res = await fetch(`/room/${config.room.slug}/invitations/${code}/revoke`, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken
+                        }
+                    });
+                    if (!res.ok) throw new Error('Failed to revoke invitation');
+                    loadInvitations();
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                }
+            };
 
             window.NexusClientInstance = client;
         });

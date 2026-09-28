@@ -35,25 +35,25 @@ var NexusRTC = (() => {
   ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // packages/core/dist/types.js
+  // ../core/dist/types.js
   var require_types = __commonJS({
-    "packages/core/dist/types.js"(exports) {
+    "../core/dist/types.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
     }
   });
 
-  // packages/core/dist/interfaces.js
+  // ../core/dist/interfaces.js
   var require_interfaces = __commonJS({
-    "packages/core/dist/interfaces.js"(exports) {
+    "../core/dist/interfaces.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
     }
   });
 
-  // packages/core/dist/events.js
+  // ../core/dist/events.js
   var require_events = __commonJS({
-    "packages/core/dist/events.js"(exports) {
+    "../core/dist/events.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.NexusEvents = void 0;
@@ -97,12 +97,14 @@ var NexusRTC = (() => {
     }
   });
 
-  // packages/core/dist/permissions.js
+  // ../core/dist/permissions.js
   var require_permissions = __commonJS({
-    "packages/core/dist/permissions.js"(exports) {
+    "../core/dist/permissions.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      exports.DEFAULT_ROLE_PERMISSIONS = exports.RoomPermission = void 0;
+      exports.ROLE_HIERARCHY = exports.DEFAULT_ROLE_PERMISSIONS = exports.RoomPermission = void 0;
+      exports.getRoleRank = getRoleRank;
+      exports.canModerateParticipant = canModerateParticipant;
       exports.resolveEffectivePermissions = resolveEffectivePermissions;
       var RoomPermission2;
       (function(RoomPermission3) {
@@ -173,12 +175,70 @@ var NexusRTC = (() => {
           RoomPermission2.RAISE_HAND
         ]
       };
-      function resolveEffectivePermissions(role, participantId, config) {
-        if (participantId && config?.participantOverrides?.[participantId]) {
-          return new Set(config.participantOverrides[participantId]);
+      exports.ROLE_HIERARCHY = {
+        host: 100,
+        moderator: 50,
+        participant: 10,
+        viewer: 1
+      };
+      function getRoleRank(role) {
+        return exports.ROLE_HIERARCHY[role] ?? 10;
+      }
+      function canModerateParticipant(callerRole, callerId, targetRole, targetId, roomHostId) {
+        if (callerId === targetId) {
+          return { allowed: false, reason: "Cannot moderate self" };
         }
-        const rolePerms = config?.roles?.[role] || exports.DEFAULT_ROLE_PERMISSIONS[role] || [];
+        if (targetRole === "host" || roomHostId && targetId === roomHostId) {
+          return { allowed: false, reason: "Cannot moderate or kick the room host" };
+        }
+        if (targetRole === "moderator" && callerRole !== "host" && (!roomHostId || callerId !== roomHostId)) {
+          return { allowed: false, reason: "Moderators cannot be moderated by peer moderators or participants" };
+        }
+        const callerRank = getRoleRank(callerRole);
+        const targetRank = getRoleRank(targetRole);
+        if (callerRank <= targetRank) {
+          return { allowed: false, reason: "Unauthorized to moderate participant with equal or higher role hierarchy" };
+        }
+        return { allowed: true };
+      }
+      function resolveEffectivePermissions(role, participantId, config, features) {
+        let rolePerms;
+        if (role === "host") {
+          const baseHost = exports.DEFAULT_ROLE_PERMISSIONS.host;
+          const customHost = config?.roles?.["host"] || [];
+          const overrides = participantId && config?.participantOverrides?.[participantId] || [];
+          rolePerms = Array.from(/* @__PURE__ */ new Set([...baseHost, ...customHost, ...overrides]));
+        } else if (participantId && config?.participantOverrides?.[participantId]) {
+          rolePerms = config.participantOverrides[participantId];
+        } else {
+          rolePerms = config?.roles?.[role] || exports.DEFAULT_ROLE_PERMISSIONS[role] || [];
+        }
         const effective = new Set(rolePerms);
+        if (features) {
+          if (features.recordingEnabled === false) {
+            effective.delete(RoomPermission2.START_RECORDING);
+            effective.delete(RoomPermission2.STOP_RECORDING);
+          }
+          if (features.breakoutRoomsEnabled === false) {
+            effective.delete(RoomPermission2.CREATE_BREAKOUT);
+            effective.delete(RoomPermission2.JOIN_BREAKOUT);
+            effective.delete(RoomPermission2.BROADCAST_BREAKOUT);
+          }
+          if (features.chatEnabled === false) {
+            effective.delete(RoomPermission2.SEND_CHAT);
+            effective.delete(RoomPermission2.SEND_PRIVATE_CHAT);
+          }
+          if (features.screenShareEnabled === false) {
+            effective.delete(RoomPermission2.SHARE_SCREEN);
+          }
+          if (features.raiseHandEnabled === false) {
+            effective.delete(RoomPermission2.RAISE_HAND);
+          }
+          if (features.liveStreamingEnabled === false) {
+            effective.delete(RoomPermission2.START_BROADCAST);
+            effective.delete(RoomPermission2.STOP_BROADCAST);
+          }
+        }
         if (role === "host") {
           return effective;
         }
@@ -199,9 +259,9 @@ var NexusRTC = (() => {
     }
   });
 
-  // packages/core/dist/index.js
+  // ../core/dist/index.js
   var require_dist = __commonJS({
-    "packages/core/dist/index.js"(exports) {
+    "../core/dist/index.js"(exports) {
       "use strict";
       var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
         if (k2 === void 0) k2 = k;
@@ -227,7 +287,7 @@ var NexusRTC = (() => {
     }
   });
 
-  // packages/client/src/index.ts
+  // src/index.ts
   var index_exports = {};
   __export(index_exports, {
     BreakoutManager: () => BreakoutManager,
@@ -239,7 +299,7 @@ var NexusRTC = (() => {
     RoomPermission: () => import_core5.RoomPermission
   });
 
-  // packages/client/src/EventEmitter.ts
+  // src/EventEmitter.ts
   var EventEmitter = class {
     events = /* @__PURE__ */ new Map();
     on(event, handler) {
@@ -286,7 +346,7 @@ var NexusRTC = (() => {
     }
   };
 
-  // packages/client/src/MediaManager.ts
+  // src/MediaManager.ts
   var import_core = __toESM(require_dist());
   var MediaManager = class extends EventEmitter {
     constructor(sendSocketMessage) {
@@ -307,10 +367,37 @@ var NexusRTC = (() => {
         console.warn("JitsiMeetExternalAPI could not be loaded. Running in headless media mode.");
         return;
       }
+      const isHost = config.role === "host" || config.role === "moderator";
+      const perms = config.permissions || [];
+      const hasPerm = (p) => perms.includes(p);
+      const toolbarButtons = [
+        "fullscreen",
+        "fodeviceselection",
+        "hangup",
+        "profile",
+        "videoquality",
+        "filmstrip",
+        "feedback",
+        "stats",
+        "shortcuts",
+        "tileview",
+        "videobackgroundblur",
+        "download",
+        "help"
+      ];
+      if (isHost || hasPerm("media:send_audio")) toolbarButtons.push("microphone");
+      if (isHost || hasPerm("media:send_video")) toolbarButtons.push("camera");
+      if (isHost || hasPerm("media:share_screen")) toolbarButtons.push("desktop");
+      if (isHost || hasPerm("chat:send")) toolbarButtons.push("chat");
+      if (isHost || hasPerm("interaction:raise_hand")) toolbarButtons.push("raisehand");
+      if (isHost || hasPerm("session:start_recording")) toolbarButtons.push("recording");
+      if (isHost || hasPerm("session:start_broadcast")) toolbarButtons.push("livestreaming");
+      if (isHost || hasPerm("moderation:mute_others")) toolbarButtons.push("mute-everyone");
+      if (isHost || hasPerm("session:update_permissions")) toolbarButtons.push("security");
       const options = {
         roomName: config.room,
         parentNode: container,
-        jwt: config.token,
+        ...config.token ? { jwt: config.token } : {},
         width: config.width || "100%",
         height: config.height || "100%",
         configOverwrite: {
@@ -318,40 +405,22 @@ var NexusRTC = (() => {
           startWithVideoMuted: true,
           prejoinPageEnabled: false,
           disableDeepLinking: true,
+          remoteVideoMenu: {
+            disableKick: !isHost,
+            disableGrantModerator: !isHost,
+            disablePrivateChat: !hasPerm("chat:send_private")
+          },
+          disableRemoteMute: !isHost && !hasPerm("moderation:mute_others"),
+          participantsPane: {
+            hideMoreActionsButton: !isHost,
+            hideMuteAllButton: !isHost && !hasPerm("moderation:mute_others")
+          },
           ...config.configOverwrite
         },
         interfaceConfigOverwrite: {
           SHOW_JITSI_WATERMARK: false,
           SHOW_WATERMARK_FOR_GUESTS: false,
-          TOOLBAR_BUTTONS: [
-            "microphone",
-            "camera",
-            "closedcaptions",
-            "desktop",
-            "fullscreen",
-            "fodeviceselection",
-            "hangup",
-            "profile",
-            "chat",
-            "recording",
-            "livestreaming",
-            "etherpad",
-            "sharedvideo",
-            "settings",
-            "raisehand",
-            "videoquality",
-            "filmstrip",
-            "invite",
-            "feedback",
-            "stats",
-            "shortcuts",
-            "tileview",
-            "videobackgroundblur",
-            "download",
-            "help",
-            "mute-everyone",
-            "security"
-          ],
+          TOOLBAR_BUTTONS: toolbarButtons,
           ...config.interfaceConfigOverwrite
         }
       };
@@ -468,7 +537,7 @@ var NexusRTC = (() => {
     }
   };
 
-  // packages/client/src/ChatManager.ts
+  // src/ChatManager.ts
   var import_core2 = __toESM(require_dist());
   var ChatManager = class extends EventEmitter {
     constructor(sendSocketMessage) {
@@ -499,7 +568,7 @@ var NexusRTC = (() => {
     }
   };
 
-  // packages/client/src/BreakoutManager.ts
+  // src/BreakoutManager.ts
   var import_core3 = __toESM(require_dist());
   var BreakoutManager = class extends EventEmitter {
     constructor(sendSocketMessage) {
@@ -519,6 +588,7 @@ var NexusRTC = (() => {
     handleBreakoutCreated(breakout) {
       this.breakoutRooms.set(breakout.id, breakout);
       this.emit("created", breakout);
+      this.emit("breakoutCreated", breakout);
       this.emit("updated", this.getBreakoutRooms());
     }
     handleBreakoutUpdated(breakout) {
@@ -544,12 +614,15 @@ var NexusRTC = (() => {
     getBreakoutRooms() {
       return Array.from(this.breakoutRooms.values());
     }
+    getBreakouts() {
+      return this.getBreakoutRooms();
+    }
     getCurrentBreakoutRoomId() {
       return this.currentBreakoutRoomId;
     }
   };
 
-  // packages/client/src/NexusClient.ts
+  // src/NexusClient.ts
   var import_core4 = __toESM(require_dist());
   var NexusClient = class extends EventEmitter {
     ws = null;
@@ -787,7 +860,7 @@ var NexusRTC = (() => {
     }
   };
 
-  // packages/client/src/index.ts
+  // src/index.ts
   var import_core5 = __toESM(require_dist());
   return __toCommonJS(index_exports);
 })();

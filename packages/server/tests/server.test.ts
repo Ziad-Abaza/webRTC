@@ -17,6 +17,7 @@ test('NexusRTC Server E2E Flow', async (t) => {
 
   let roomId = '';
   let roomSlug = '';
+  let hostKey = '';
   let hostToken = '';
   let participantToken = '';
 
@@ -42,9 +43,11 @@ test('NexusRTC Server E2E Flow', async (t) => {
     const data = await res.json();
     assert.ok(data.id);
     assert.ok(data.slug);
+    assert.ok(data.hostKey);
     assert.equal(data.title, 'Weekly Standup');
     roomId = data.id;
     roomSlug = data.slug;
+    hostKey = data.hostKey;
   });
 
   await t.test('REST: Generate Join Tokens for Host and Participant', async () => {
@@ -58,7 +61,8 @@ test('NexusRTC Server E2E Flow', async (t) => {
       body: JSON.stringify({
         participantId: 'user-alice',
         name: 'Alice Host',
-        role: 'host'
+        role: 'host',
+        hostKey: hostKey
       })
     });
     assert.equal(hostRes.status, 200);
@@ -549,6 +553,191 @@ test('NexusRTC Server E2E Flow', async (t) => {
     hostWs.close();
     guestWs.close();
     tamperedWs.close();
+
+    // Test G: Regular participant token attempting REST host-only operations
+    const guestHeaders = {
+      'Authorization': `Bearer ${guestExploitData.token}`,
+      'Content-Type': 'application/json'
+    };
+
+    // 1. Update room permissions
+    const restPermRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/permissions`, {
+      method: 'PUT',
+      headers: guestHeaders,
+      body: JSON.stringify({ locks: { lockMicrophones: true } })
+    });
+    assert.equal(restPermRes.status, 403, 'Guest must get 403 on PUT permissions');
+
+    // 2. Start recording via REST
+    const restRecRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.id}/recordings/start`, {
+      method: 'POST',
+      headers: guestHeaders,
+      body: JSON.stringify({})
+    });
+    assert.equal(restRecRes.status, 403, 'Guest must get 403 on POST recordings/start');
+
+    // 3. Stop recording via REST
+    const restRecStopRes = await fetch(`http://localhost:${port}/api/v1/recordings/fake-rec-id/stop`, {
+      method: 'POST',
+      headers: guestHeaders,
+      body: JSON.stringify({})
+    });
+    assert.equal(restRecStopRes.status, 403, 'Guest must get 403 on POST recordings/:id/stop');
+
+    // 4. Create breakout room via REST
+    const restBreakoutRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.id}/breakouts`, {
+      method: 'POST',
+      headers: guestHeaders,
+      body: JSON.stringify({ name: 'Illegal Breakout' })
+    });
+    assert.equal(restBreakoutRes.status, 403, 'Guest must get 403 on POST breakouts');
+
+    // 5. Start live broadcast via REST
+    const restBroadcastRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.id}/broadcast/start`, {
+      method: 'POST',
+      headers: guestHeaders,
+      body: JSON.stringify({ streamUrl: 'rtmp://example.com/live', streamKey: 'secret' })
+    });
+    assert.equal(restBroadcastRes.status, 403, 'Guest must get 403 on POST broadcast/start');
+
+    // 6. View room recordings via REST without permissions
+    const restRecListRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.id}/recordings`, {
+      headers: guestHeaders
+    });
+    assert.equal(restRecListRes.status, 403, 'Guest must get 403 on GET recordings');
+
+    // Test H: Host Impersonation Protection
+    // An attacker requests a token explicitly setting participantId = room.hostId ('real-host-123') without hostKey
+    const hijackRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'real-host-123',
+        name: 'Imposter Bob'
+      })
+    });
+    assert.equal(hijackRes.status, 200);
+    const hijackData = await hijackRes.json();
+    assert.equal(hijackData.participant.role, 'participant');
+    assert.notEqual(hijackData.participant.id, 'real-host-123', 'Attacker must be reassigned a random ID to prevent host impersonation');
+
+    // Test I: Protection against moderating the Host
+    // Create a moderator user who has 'moderation:kick_participants' and 'moderation:mute_others'
+    const modRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'mod-user-1',
+        name: 'Moderator User',
+        role: 'moderator',
+        hostKey: room.hostKey
+      })
+    });
+    assert.equal(modRes.status, 200);
+    const modData = await modRes.json();
+    assert.equal(modData.participant.role, 'moderator');
+
+    // Moderator connects via WebSocket
+    const modWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => modWs.on('open', resolve));
+    const modJoinPromise = new Promise<any>((resolve) => {
+      modWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    modWs.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: modData.token } }));
+    await modJoinPromise;
+
+    // Moderator attempts to kick the room host -> Server MUST reject!
+    const modKickHostPromise = new Promise<any>((resolve) => {
+      modWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    modWs.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'real-host-123',
+        action: 'kick'
+      }
+    }));
+    const modKickErr = await modKickHostPromise;
+    assert.match(modKickErr.message, /Cannot moderate or kick the room host/);
+
+    // Moderator attempts to mute the room host -> Server MUST reject!
+    const modMuteHostPromise = new Promise<any>((resolve) => {
+      modWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    modWs.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'real-host-123',
+        action: 'mute-audio'
+      }
+    }));
+    const modMuteErr = await modMuteHostPromise;
+    assert.match(modMuteErr.message, /Cannot moderate or kick the room host/);
+    modWs.close();
+
+    // Test J: Disabled Room Features override all roles (even Host)
+    const restrictedRoomRes = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        title: 'Restricted Capabilities Room',
+        hostId: 'strict-host-1',
+        features: {
+          recordingEnabled: false,
+          breakoutRoomsEnabled: false
+        }
+      })
+    });
+    assert.equal(restrictedRoomRes.status, 201);
+    const restrictedRoom = await restrictedRoomRes.json();
+
+    const strictHostRes = await fetch(`http://localhost:${port}/api/v1/rooms/${restrictedRoom.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'strict-host-1',
+        name: 'Strict Host',
+        role: 'host',
+        hostKey: restrictedRoom.hostKey
+      })
+    });
+    const strictHostData = await strictHostRes.json();
+    assert.equal(strictHostData.participant.role, 'host');
+    // Ensure effective permissions have recording and breakout stripped despite role: 'host'
+    assert.equal(strictHostData.participant.permissions.includes('session:start_recording'), false);
+    assert.equal(strictHostData.participant.permissions.includes('breakout:create'), false);
+
+    // Host attempting REST recording start on a room where recording is disabled -> 403 Forbidden
+    const strictHostRecRes = await fetch(`http://localhost:${port}/api/v1/rooms/${restrictedRoom.id}/recordings/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${strictHostData.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    assert.equal(strictHostRecRes.status, 403);
   });
 
   await t.test('Deep Security: Path Traversal, HostKey Sanitization, IDOR Cross-Room Access & WS Rate Limits', async (t3) => {
@@ -648,5 +837,596 @@ test('NexusRTC Server E2E Flow', async (t) => {
     assert.equal(rateLimitTriggered, true, 'WebSocket server must enforce rate limiting against flooding');
 
     floodWs.close();
+  });
+
+  await t.test('Adversarial Security Red-Team: Complete Attack Matrix', async () => {
+    // 1. Custom Role Privilege Escalation:
+    // Create a room that defines a custom privileged role 'co-host'
+    const roomRes = await fetch(`http://localhost:${port}/api/v1/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        title: 'High Security Summit',
+        hostId: 'real-owner-uuid',
+        permissions: {
+          roles: {
+            'co-host': [
+              'moderation:kick_participants',
+              'moderation:mute_others',
+              'session:update_permissions'
+            ]
+          }
+        }
+      })
+    });
+    assert.equal(roomRes.status, 201);
+    const room = await roomRes.json();
+
+    // A malicious guest requests token with role: 'co-host' without hostKey
+    const forgeRoleRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'untrusted-guest-1',
+        name: 'Sneaky Guest',
+        role: 'co-host' // Attempting to escalate to custom role
+      })
+    });
+    assert.equal(forgeRoleRes.status, 200);
+    const forgeRoleData = await forgeRoleRes.json();
+    assert.equal(forgeRoleData.participant.role, 'participant', 'Untrusted caller attempting to claim custom privileged role must be authoritatively demoted to participant');
+    assert.equal(forgeRoleData.participant.permissions.includes('moderation:kick_participants'), false);
+
+    // 2. Participant Identity Spoofing & Hijack:
+    // Generate real host token
+    const realHostRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'real-owner-uuid',
+        name: 'The Boss',
+        role: 'host',
+        hostKey: room.hostKey
+      })
+    });
+    assert.equal(realHostRes.status, 200);
+    const realHostData = await realHostRes.json();
+
+    // Generate Moderator token
+    const modRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'trusted-mod-1',
+        name: 'Moderator One',
+        role: 'moderator',
+        hostKey: room.hostKey
+      })
+    });
+    assert.equal(modRes.status, 200);
+    const modData = await modRes.json();
+
+    // Malicious caller tries to claim participantId = 'trusted-mod-1' without hostKey
+    const spoofModRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'trusted-mod-1',
+        name: 'Imposter Mod'
+      })
+    });
+    assert.equal(spoofModRes.status, 200);
+    const spoofModData = await spoofModRes.json();
+    assert.equal(spoofModData.participant.role, 'participant');
+    assert.notEqual(spoofModData.participant.id, 'trusted-mod-1', 'Caller without hostKey cannot hijack active moderator ID');
+
+    // 3. Multi-Session / Multi-Tab / Reconnect Resilience:
+    const wsUrl = `ws://localhost:${port}/ws`;
+    const hostTab1Ws = new WebSocket(wsUrl);
+    const hostTab2Ws = new WebSocket(wsUrl);
+    await Promise.all([
+      new Promise((resolve) => hostTab1Ws.on('open', resolve)),
+      new Promise((resolve) => hostTab2Ws.on('open', resolve))
+    ]);
+
+    // Host connects Tab 1
+    const hostTab1JoinPromise = new Promise<any>((resolve) => {
+      hostTab1Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    hostTab1Ws.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: realHostData.token } }));
+    await hostTab1JoinPromise;
+
+    // Host connects Tab 2 (same token & participantId)
+    const hostTab2JoinPromise = new Promise<any>((resolve) => {
+      hostTab2Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    hostTab2Ws.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: realHostData.token } }));
+    await hostTab2JoinPromise;
+
+    // Connect guest to observe presence
+    const guestWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => guestWs.on('open', resolve));
+    const guestJoinPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.JOINED) resolve(p.payload);
+      });
+    });
+    guestWs.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: forgeRoleData.token } }));
+    await guestJoinPromise;
+
+    // Host closes Tab 1 -> Guest MUST NOT receive PARTICIPANT_LEFT because Tab 2 is still active!
+    let guestReceivedLeft = false;
+    guestWs.on('message', (msg) => {
+      const p = JSON.parse(msg.toString());
+      if (p.event === NexusEvents.PARTICIPANT_LEFT && p.payload.participantId === 'real-owner-uuid') {
+        guestReceivedLeft = true;
+      }
+    });
+
+    hostTab1Ws.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(guestReceivedLeft, false, 'Closing one tab/device of a multi-session host must not evict the host from the room');
+
+    // Host in Tab 2 can still perform actions (e.g. toggle mic lock)
+    hostTab2Ws.send(JSON.stringify({
+      event: NexusEvents.UPDATE_PERMISSIONS,
+      payload: { locks: { lockMicrophones: true } }
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // 4. Token Replay After Eviction (Kicked Participant Reconnect Protection):
+    // Host in Tab 2 kicks the guest
+    const guestKickedPromise = new Promise<any>((resolve) => {
+      guestWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.PARTICIPANT_MODERATED) resolve(p.payload);
+      });
+    });
+
+    hostTab2Ws.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: forgeRoleData.participant.id,
+        action: 'kick'
+      }
+    }));
+
+    const kickedPayload = await guestKickedPromise;
+    assert.equal(kickedPayload.action, 'kick');
+
+    // Wait for socket to close
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Evicted guest attempts to reconnect using the same token
+    const reconnectedWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => reconnectedWs.on('open', resolve));
+    const evictedErrPromise = new Promise<any>((resolve) => {
+      reconnectedWs.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+
+    reconnectedWs.send(JSON.stringify({
+      event: NexusEvents.JOIN,
+      payload: { token: forgeRoleData.token }
+    }));
+
+    const evictedErr = await evictedErrPromise;
+    assert.match(evictedErr.message, /Participant has been evicted from this session/);
+    reconnectedWs.close();
+
+    // Evicted guest attempts to call REST endpoint with the evicted token
+    const evictedRestRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/permissions`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${forgeRoleData.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ locks: { lockMicrophones: false } })
+    });
+    assert.equal(evictedRestRes.status, 403, 'Evicted participant token must be rejected with 403 on REST endpoints');
+
+    // 5. Peer Moderator and Immunity Hierarchy Tests:
+    // Create Moderator Two
+    const mod2Res = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': instance.config.apiKey
+      },
+      body: JSON.stringify({
+        participantId: 'trusted-mod-2',
+        name: 'Moderator Two',
+        role: 'moderator',
+        hostKey: room.hostKey
+      })
+    });
+    const mod2Data = await mod2Res.json();
+
+    const mod1Ws = new WebSocket(wsUrl);
+    const mod2Ws = new WebSocket(wsUrl);
+    await Promise.all([
+      new Promise((resolve) => mod1Ws.on('open', resolve)),
+      new Promise((resolve) => mod2Ws.on('open', resolve))
+    ]);
+
+    const m1Join = new Promise<any>((resolve) => mod1Ws.on('message', (msg) => {
+      const p = JSON.parse(msg.toString());
+      if (p.event === NexusEvents.JOINED) resolve(p.payload);
+    }));
+    mod1Ws.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: modData.token } }));
+    await m1Join;
+
+    const m2Join = new Promise<any>((resolve) => mod2Ws.on('message', (msg) => {
+      const p = JSON.parse(msg.toString());
+      if (p.event === NexusEvents.JOINED) resolve(p.payload);
+    }));
+    mod2Ws.send(JSON.stringify({ event: NexusEvents.JOIN, payload: { token: mod2Data.token } }));
+    await m2Join;
+
+    // Moderator 1 attempts to kick peer Moderator 2 -> MUST BE REJECTED!
+    const peerKickErrPromise = new Promise<any>((resolve) => {
+      mod1Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    mod1Ws.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'trusted-mod-2',
+        action: 'kick'
+      }
+    }));
+    const peerKickErr = await peerKickErrPromise;
+    assert.match(peerKickErr.message, /Moderators cannot be moderated by peer moderators or participants/);
+
+    // Moderator 1 attempts to mute peer Moderator 2 -> MUST BE REJECTED!
+    const peerMuteErrPromise = new Promise<any>((resolve) => {
+      mod1Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    mod1Ws.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'trusted-mod-2',
+        action: 'mute-audio'
+      }
+    }));
+    const peerMuteErr = await peerMuteErrPromise;
+    assert.match(peerMuteErr.message, /Moderators cannot be moderated by peer moderators or participants/);
+
+    // Moderator 1 attempts to kick themselves -> MUST BE REJECTED!
+    const selfKickErrPromise = new Promise<any>((resolve) => {
+      mod1Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    mod1Ws.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'trusted-mod-1',
+        action: 'kick'
+      }
+    }));
+    const selfKickErr = await selfKickErrPromise;
+    assert.match(selfKickErr.message, /Cannot moderate self/);
+
+    // Moderator 1 attempts to alter roles or strip host permissions via REST
+    const modDemoteHostRes = await fetch(`http://localhost:${port}/api/v1/rooms/${room.slug}/permissions`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${modData.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        participantOverrides: {
+          'real-owner-uuid': [] // Attempting to strip host of all permissions
+        }
+      })
+    });
+    assert.equal(modDemoteHostRes.status, 403, 'Non-host participant cannot modify role definitions or participant overrides');
+
+    // 6. Host kicks Moderator 1 -> Allowed (Host strictly outranks Moderator)
+    const mod1KickedPromise = new Promise<any>((resolve) => {
+      mod1Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.PARTICIPANT_MODERATED) resolve(p.payload);
+      });
+    });
+    hostTab2Ws.send(JSON.stringify({
+      event: NexusEvents.MODERATE_PARTICIPANT,
+      payload: {
+        targetParticipantId: 'trusted-mod-1',
+        action: 'kick'
+      }
+    }));
+    const mod1Kicked = await mod1KickedPromise;
+    assert.equal(mod1Kicked.action, 'kick');
+
+    // 7. Duplicate Socket Join Rejection
+    const dupJoinErrPromise = new Promise<any>((resolve) => {
+      hostTab2Ws.on('message', (msg) => {
+        const p = JSON.parse(msg.toString());
+        if (p.event === NexusEvents.ERROR) resolve(p.payload);
+      });
+    });
+    hostTab2Ws.send(JSON.stringify({
+      event: NexusEvents.JOIN,
+      payload: { token: realHostData.token }
+    }));
+    const dupJoinErr = await dupJoinErrPromise;
+    assert.match(dupJoinErr.message, /Session already joined on this connection/);
+
+    // Cleanup open sockets
+    hostTab2Ws.close();
+    mod1Ws.close();
+    mod2Ws.close();
+    guestWs.close();
+  });
+
+  await t.test('Invitation Flow & Adversarial Tampering: Complete Lifecycle and Security', async () => {
+    // 1. Host creates legitimate participant invitation
+    const createPartInvRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hostToken}`
+      },
+      body: JSON.stringify({
+        role: 'participant',
+        expiresInSeconds: 3600,
+        maxUses: 10
+      })
+    });
+    assert.equal(createPartInvRes.status, 201);
+    const partInv = await createPartInvRes.json();
+    assert.ok(partInv.code);
+    assert.equal(partInv.role, 'participant');
+    assert.equal(partInv.status, 'active');
+    assert.equal(partInv.usesCount, 0);
+
+    // 2. Host creates legitimate viewer invitation
+    const createViewerInvRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hostToken}`
+      },
+      body: JSON.stringify({
+        role: 'viewer',
+        expiresInSeconds: 3600
+      })
+    });
+    assert.equal(createViewerInvRes.status, 201);
+    const viewerInv = await createViewerInvRes.json();
+    assert.ok(viewerInv.code);
+    assert.equal(viewerInv.role, 'viewer');
+
+    // 3. Attempting to create an invitation with elevated role ('host' or 'moderator') must be rejected
+    const badRoleRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hostToken}`
+      },
+      body: JSON.stringify({
+        role: 'host'
+      })
+    });
+    assert.equal(badRoleRes.status, 400);
+
+    // 4. Non-host participant attempting to create an invitation must be rejected with 403
+    const nonHostCreateRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${participantToken}`
+      },
+      body: JSON.stringify({
+        role: 'participant'
+      })
+    });
+    assert.equal(nonHostCreateRes.status, 403);
+
+    // 5. Public lookup of invitation code validates details without leaking secrets
+    const publicLookupRes = await fetch(`http://localhost:${port}/api/v1/invitations/${partInv.code}`);
+    assert.equal(publicLookupRes.status, 200);
+    const publicData = await publicLookupRes.json();
+    assert.equal(publicData.code, partInv.code);
+    assert.equal(publicData.role, 'participant');
+    assert.equal(publicData.isValid, true);
+    assert.equal(publicData.hostKey, undefined);
+    assert.equal(publicData.password, undefined);
+
+    // 6. Legitimate join using participant invitation code (without requiring API key)
+    const joinRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Honest Guest',
+        inviteCode: partInv.code
+      })
+    });
+    assert.equal(joinRes.status, 200);
+    const joinData = await joinRes.json();
+    assert.ok(joinData.token);
+    assert.equal(joinData.participant.role, 'participant');
+    assert.ok(joinData.participant.permissions.includes('media:send_audio'));
+
+    // Verify usage count incremented
+    const listRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      headers: { 'Authorization': `Bearer ${hostToken}` }
+    });
+    const listData = await listRes.json();
+    const updatedPartInv = listData.find((i: any) => i.code === partInv.code);
+    assert.equal(updatedPartInv.usesCount, 1);
+
+    // 7. Malicious tampering: Attacker joins with inviteCode and attempts to claim role: 'host'
+    const exploitHostRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Attacker Guest',
+        inviteCode: partInv.code,
+        role: 'host' // Tampered role parameter
+      })
+    });
+    assert.equal(exploitHostRes.status, 200);
+    const exploitData = await exploitHostRes.json();
+    // Authoritatively enforced: must remain participant, NOT host!
+    assert.equal(exploitData.participant.role, 'participant');
+    assert.ok(!exploitData.participant.permissions.includes('session:update_permissions'));
+
+    // 8. Malicious tampering: Attacker uses viewer invitation and requests role: 'participant'
+    const exploitViewerRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Sneaky Viewer',
+        inviteCode: viewerInv.code,
+        role: 'participant'
+      })
+    });
+    assert.equal(exploitViewerRes.status, 200);
+    const exploitViewerData = await exploitViewerRes.json();
+    // Strictly enforced: locked to viewer!
+    assert.equal(exploitViewerData.participant.role, 'viewer');
+    assert.ok(!exploitViewerData.participant.permissions.includes('media:send_audio'));
+    assert.ok(!exploitViewerData.participant.permissions.includes('media:send_video'));
+
+    // 9. Expiration: Create invitation expiring in 1 second
+    const expInvRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hostToken}`
+      },
+      body: JSON.stringify({
+        role: 'participant',
+        expiresInSeconds: 1
+      })
+    });
+    const expInv = await expInvRes.json();
+    // Wait for expiration
+    await new Promise((r) => setTimeout(r, 1100));
+
+    const expJoinRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Late Guest',
+        inviteCode: expInv.code
+      })
+    });
+    assert.equal(expJoinRes.status, 400);
+    const expErr = await expJoinRes.json();
+    assert.match(expErr.error, /expired/i);
+
+    // 10. Max Uses Limit: Create single-use invitation
+    const singleUseRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/invitations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hostToken}`
+      },
+      body: JSON.stringify({
+        role: 'participant',
+        maxUses: 1
+      })
+    });
+    const singleInv = await singleUseRes.json();
+
+    // First use succeeds
+    const firstJoinRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'First Guest',
+        inviteCode: singleInv.code
+      })
+    });
+    assert.equal(firstJoinRes.status, 200);
+
+    // Second use rejected
+    const secondJoinRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Second Guest',
+        inviteCode: singleInv.code
+      })
+    });
+    assert.equal(secondJoinRes.status, 400);
+    const secondErr = await secondJoinRes.json();
+    assert.match(secondErr.error, /maximum|limit|expired/i);
+
+    // 11. Revocation: Non-host cannot revoke, Host can revoke, and subsequent joins fail
+    const nonHostRevokeRes = await fetch(`http://localhost:${port}/api/v1/invitations/${partInv.code}/revoke`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${participantToken}`
+      }
+    });
+    assert.equal(nonHostRevokeRes.status, 403);
+
+    const hostRevokeRes = await fetch(`http://localhost:${port}/api/v1/invitations/${partInv.code}/revoke`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${hostToken}`
+      }
+    });
+    assert.equal(hostRevokeRes.status, 200);
+
+    const revokedJoinRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Attempted Join',
+        inviteCode: partInv.code
+      })
+    });
+    assert.equal(revokedJoinRes.status, 400);
+    const revokedErr = await revokedJoinRes.json();
+    assert.match(revokedErr.error, /revoked/i);
+
+    // 12. Invalid arbitrary inviteCode is rejected
+    const invalidCodeRes = await fetch(`http://localhost:${port}/api/v1/rooms/${roomSlug}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Hacker',
+        inviteCode: 'completely-fake-code-9999'
+      })
+    });
+    assert.equal(invalidCodeRes.status, 400);
+    const invalidErr = await invalidCodeRes.json();
+    assert.match(invalidErr.error, /invalid/i);
   });
 });

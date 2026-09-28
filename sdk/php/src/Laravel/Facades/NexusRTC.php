@@ -11,6 +11,7 @@ use NexusRTC\Client\NexusRtcClient;
  * @method static array generateJoinToken(string $roomIdOrSlug, array $participantData)
  * @method static array getRoomPermissions(string $roomIdOrSlug)
  * @method static array updateRoomPermissions(string $roomIdOrSlug, array $permissionsConfig)
+ * @method static array banParticipant(string $roomIdOrSlug, string $participantId)
  * @method static array listParticipants(string $roomId)
  * @method static array startRecording(string $roomId)
  * @method static array stopRecording(string $recordingId)
@@ -18,6 +19,10 @@ use NexusRTC\Client\NexusRtcClient;
  * @method static array createBreakoutRoom(string $roomId, string $name, ?int $durationMinutes = null)
  * @method static array startBroadcast(string $roomId, string $streamUrl, string $streamKey)
  * @method static array stopBroadcast(string $roomId)
+ * @method static array createInvitation(string $roomIdOrSlug, array $params = [])
+ * @method static array listInvitations(string $roomIdOrSlug)
+ * @method static array|null getInvitation(string $code)
+ * @method static array revokeInvitation(string $codeOrId)
  *
  * @see \NexusRTC\Client\NexusRtcClient
  */

@@ -2,7 +2,7 @@
 
 namespace NexusRTC\Client\Models;
 
-class Room
+class Room implements \JsonSerializable
 {
     public function __construct(
         public readonly string $id,
@@ -37,17 +37,31 @@ class Room
         );
     }
 
-    public function toArray(): array
+    public function toArray(bool $includeSecrets = false): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'slug' => $this->slug,
             'title' => $this->title,
             'status' => $this->status,
             'hostId' => $this->hostId,
+            'mediaProvider' => $this->mediaProvider,
+            'mediaConfig' => $this->mediaConfig,
             'features' => $this->features,
+            'permissions' => $this->permissions,
             'description' => $this->description,
             'metadata' => $this->metadata,
         ];
+        if ($includeSecrets && $this->hostKey !== null) {
+            $data['hostKey'] = $this->hostKey;
+        }
+        return $data;
+    }
+
+    public function jsonSerialize(): array
+    {
+        // When serialized into JSON (e.g. for views or client-side config),
+        // hostKey is strictly excluded to prevent privilege leakage.
+        return $this->toArray(false);
     }
 }

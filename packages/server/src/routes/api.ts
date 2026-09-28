@@ -4,7 +4,7 @@ import { RecordingService } from '../services/RecordingService.js';
 import { BreakoutService } from '../services/BreakoutService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { LocalStorageProvider } from '../storage/LocalStorageProvider.js';
-import { IDatabaseAdapter, Room } from '@nexusrtc/core';
+import { IDatabaseAdapter, Room, RoomPermission, resolveEffectivePermissions } from '@nexusrtc/core';
 import { apiKeyMiddleware, apiKeyOrJwtMiddleware, AuthenticatedRequest } from '../middlewares/auth.js';
 import { ServerConfig } from '../config/index.js';
 import fs from 'fs';
@@ -107,17 +107,58 @@ export function createApiRouter(
     }
   });
 
-  router.put('/rooms/:idOrSlug/permissions', auth, async (req: Request, res: Response) => {
+  router.put('/rooms/:idOrSlug/permissions', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const room = await roomService.updateRoomPermissions(req.params.idOrSlug, req.body);
-      res.json({ success: true, permissions: room.permissions });
+      const room = await roomService.getRoom(req.params.idOrSlug);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      if (req.participant) {
+        if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) {
+          res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+          return;
+        }
+        if (room.permissions?.bannedParticipantIds?.includes(req.participant.sub)) {
+          res.status(403).json({ error: 'Forbidden: Participant has been evicted from this session' });
+          return;
+        }
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room.permissions, room.features);
+        if (!effective.has(RoomPermission.UPDATE_ROOM_PERMISSIONS)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to update room permissions' });
+          return;
+        }
+        const isCallerHost = req.participant.role === 'host' || req.participant.sub === room.hostId;
+        if (!isCallerHost && (req.body.roles || req.body.participantOverrides)) {
+          res.status(403).json({ error: 'Forbidden: Only room host can modify role capabilities or participant overrides' });
+          return;
+        }
+      }
+      const updated = await roomService.updateRoomPermissions(room.id, req.body);
+      res.json({ success: true, permissions: updated.permissions });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
   });
 
+  function isCallerRoomHost(req: AuthenticatedRequest, room: Room, apiKey?: string): boolean {
+    if (apiKey && apiKey === config.apiKey) return true;
+    if (!req.participant) return false;
+    if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) return false;
+    return req.participant.role === 'host' || req.participant.sub === room.hostId;
+  }
+
   // Generate join token for a participant
-  router.post('/rooms/:idOrSlug/token', auth, async (req: Request, res: Response) => {
+  router.post('/rooms/:idOrSlug/token', async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const apiKey = (req.headers['x-api-key'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+    const hasValidApiKey = apiKey === config.apiKey;
+
+    if (!hasValidApiKey && !req.body?.inviteCode) {
+      res.status(401).json({ error: 'Unauthorized: Master API key or invitation code required' });
+      return;
+    }
+
     try {
       const result = await roomService.generateJoinToken(req.params.idOrSlug, req.body);
       res.json({
@@ -126,6 +167,113 @@ export function createApiRouter(
       });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Room Invitations (Protected: Room host or master API key)
+  router.post('/rooms/:idOrSlug/invitations', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const room = await roomService.getRoom(req.params.idOrSlug);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      const authHeader = req.headers.authorization;
+      const apiKey = (req.headers['x-api-key'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+      if (!isCallerRoomHost(req, room, apiKey || undefined)) {
+        res.status(403).json({ error: 'Forbidden: Only room host can create invitations' });
+        return;
+      }
+
+      const invitation = await roomService.createInvitation(
+        room.id,
+        req.body,
+        req.participant?.sub || room.hostId
+      );
+      res.status(201).json(invitation);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.get('/rooms/:idOrSlug/invitations', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const room = await roomService.getRoom(req.params.idOrSlug);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      const authHeader = req.headers.authorization;
+      const apiKey = (req.headers['x-api-key'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+      if (!isCallerRoomHost(req, room, apiKey || undefined)) {
+        res.status(403).json({ error: 'Forbidden: Only room host can view invitations' });
+        return;
+      }
+
+      const list = await roomService.listInvitations(room.id);
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to retrieve invitations' });
+    }
+  });
+
+  router.post('/invitations/:codeOrId/revoke', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const invLookup = (await db.getInvitationByCode(req.params.codeOrId)) || (await db.getInvitationById(req.params.codeOrId));
+      if (!invLookup) {
+        res.status(404).json({ error: 'Invitation not found' });
+        return;
+      }
+      const room = await roomService.getRoom(invLookup.roomId);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      const authHeader = req.headers.authorization;
+      const apiKey = (req.headers['x-api-key'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+      if (!isCallerRoomHost(req, room, apiKey || undefined)) {
+        res.status(403).json({ error: 'Forbidden: Only room host can revoke invitations' });
+        return;
+      }
+
+      const revoked = await roomService.revokeInvitation(invLookup.id);
+      res.json({ success: true, invitation: revoked });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Public Invitation Lookup (Validates invitation code and provides sanitized preview)
+  router.get('/invitations/:code', async (req: Request, res: Response) => {
+    try {
+      const result = await roomService.getInvitation(req.params.code);
+      if (!result) {
+        res.status(404).json({ error: 'Invitation not found or invalid' });
+        return;
+      }
+      const { invitation, room } = result;
+      const isExpired = Boolean(
+        invitation.status === 'expired' || 
+        (invitation.expiresAt && Date.now() > invitation.expiresAt)
+      );
+      const isLimitReached = Boolean(invitation.maxUses && invitation.usesCount >= invitation.maxUses);
+      const isRevoked = invitation.status === 'revoked';
+      const isRoomActive = room.status === 'active';
+
+      res.json({
+        code: invitation.code,
+        roomId: invitation.roomId,
+        roomSlug: invitation.roomSlug,
+        roomTitle: room.title,
+        role: invitation.role,
+        maxUses: invitation.maxUses,
+        usesCount: invitation.usesCount,
+        expiresAt: invitation.expiresAt,
+        status: isRevoked ? 'revoked' : (isExpired || isLimitReached ? 'expired' : invitation.status),
+        isValid: !isRevoked && !isExpired && !isLimitReached && isRoomActive
+      });
+    } catch {
+      res.status(500).json({ error: 'Internal server error inspecting invitation' });
     }
   });
 
@@ -166,6 +314,14 @@ export function createApiRouter(
         res.status(403).json({ error: 'Forbidden: Access to another room recordings is prohibited' });
         return;
       }
+      if (req.participant) {
+        const room = await roomService.getRoom(req.params.roomId);
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room?.permissions, room?.features);
+        if (!effective.has(RoomPermission.START_RECORDING) && !effective.has(RoomPermission.STOP_RECORDING) && req.participant.role !== 'host') {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to view room recordings' });
+          return;
+        }
+      }
       const recordings = await recordingService.listRecordings(req.params.roomId);
       res.json(recordings);
     } catch {
@@ -173,19 +329,52 @@ export function createApiRouter(
     }
   });
 
-  router.post('/rooms/:roomId/recordings/start', auth, async (req: Request, res: Response) => {
+  router.post('/rooms/:roomId/recordings/start', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const recording = await recordingService.startRecording(req.params.roomId);
+      const room = await roomService.getRoom(req.params.roomId);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      if (req.participant) {
+        if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) {
+          res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+          return;
+        }
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room.permissions, room.features);
+        if (!effective.has(RoomPermission.START_RECORDING)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to start recording' });
+          return;
+        }
+      }
+      const recording = await recordingService.startRecording(room.id);
       res.status(201).json(recording);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  router.post('/recordings/:recordingId/stop', auth, async (req: Request, res: Response) => {
+  router.post('/recordings/:recordingId/stop', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const recording = await recordingService.stopRecording(req.params.recordingId);
-      res.json(recording);
+      if (req.participant) {
+        const callerRoom = await roomService.getRoom(req.participant.roomId);
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, callerRoom?.permissions, callerRoom?.features);
+        if (!effective.has(RoomPermission.STOP_RECORDING)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to stop recording' });
+          return;
+        }
+      }
+      const recording = await db.getRecording(req.params.recordingId);
+      if (!recording) {
+        res.status(404).json({ error: 'Recording not found' });
+        return;
+      }
+      if (req.participant && req.participant.roomId !== recording.roomId) {
+        res.status(403).json({ error: 'Forbidden: Access to another room recording is prohibited' });
+        return;
+      }
+      const result = await recordingService.stopRecording(req.params.recordingId);
+      res.json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -204,6 +393,16 @@ export function createApiRouter(
       } catch (pathErr: any) {
         res.status(400).json({ error: 'Invalid file key or path traversal detected' });
         return;
+      }
+
+      // If accessed via participant session token, enforce tenant & recording access boundary
+      if (req.participant) {
+        const recordings = await recordingService.listRecordings(req.participant.roomId);
+        const ownsFile = recordings.some(r => r.storageKey === key || (r.fileUrl && r.fileUrl.includes(key)));
+        if (!ownsFile) {
+          res.status(403).json({ error: 'Forbidden: Access to recording from another room is prohibited' });
+          return;
+        }
       }
 
       if (!fs.existsSync(filePath)) {
@@ -231,10 +430,26 @@ export function createApiRouter(
     }
   });
 
-  router.post('/rooms/:roomId/breakouts', auth, async (req: Request, res: Response) => {
+  router.post('/rooms/:roomId/breakouts', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      const room = await roomService.getRoom(req.params.roomId);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      if (req.participant) {
+        if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) {
+          res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+          return;
+        }
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room.permissions, room.features);
+        if (!effective.has(RoomPermission.CREATE_BREAKOUT)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to create breakout rooms' });
+          return;
+        }
+      }
       const { name, durationMinutes } = req.body;
-      const breakout = await breakoutService.createBreakoutRoom(req.params.roomId, name, durationMinutes);
+      const breakout = await breakoutService.createBreakoutRoom(room.id, name, durationMinutes);
       res.status(201).json(breakout);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -242,19 +457,51 @@ export function createApiRouter(
   });
 
   // Live Broadcast
-  router.post('/rooms/:roomId/broadcast/start', auth, async (req: Request, res: Response) => {
+  router.post('/rooms/:roomId/broadcast/start', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      const room = await roomService.getRoom(req.params.roomId);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      if (req.participant) {
+        if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) {
+          res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+          return;
+        }
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room.permissions, room.features);
+        if (!effective.has(RoomPermission.START_BROADCAST)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to start live broadcast' });
+          return;
+        }
+      }
       const { streamUrl, streamKey } = req.body;
-      const b = await broadcastService.startBroadcast(req.params.roomId, streamUrl, streamKey);
+      const b = await broadcastService.startBroadcast(room.id, streamUrl, streamKey);
       res.json(b);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  router.post('/rooms/:roomId/broadcast/stop', auth, async (req: Request, res: Response) => {
+  router.post('/rooms/:roomId/broadcast/stop', sessionAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const b = await broadcastService.stopBroadcast(req.params.roomId);
+      const room = await roomService.getRoom(req.params.roomId);
+      if (!room) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      if (req.participant) {
+        if (req.participant.roomId !== room.id && req.participant.roomSlug !== room.slug) {
+          res.status(403).json({ error: 'Forbidden: Access to another room is prohibited' });
+          return;
+        }
+        const effective = resolveEffectivePermissions(req.participant.role, req.participant.sub, room.permissions, room.features);
+        if (!effective.has(RoomPermission.STOP_BROADCAST)) {
+          res.status(403).json({ error: 'Forbidden: Insufficient permissions to stop live broadcast' });
+          return;
+        }
+      }
+      const b = await broadcastService.stopBroadcast(room.id);
       res.json(b);
     } catch (err: any) {
       res.status(400).json({ error: err.message });

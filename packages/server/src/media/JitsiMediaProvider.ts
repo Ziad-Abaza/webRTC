@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { IMediaProvider, Room, Participant, MediaTokenResult } from '@nexusrtc/core';
+import { IMediaProvider, Room, Participant, MediaTokenResult, RoomPermission } from '@nexusrtc/core';
 
 export interface JitsiProviderOptions {
   domain?: string;
@@ -26,10 +26,15 @@ export class JitsiMediaProvider implements IMediaProvider {
     options?: Record<string, unknown>
   ): Promise<MediaTokenResult> {
     const isModerator = participant.role === 'host' || participant.role === 'moderator';
+    const canRecord = Boolean(room.features.recordingEnabled && (participant.permissions?.includes(RoomPermission.START_RECORDING) ?? isModerator));
+    const canLivestream = Boolean(room.features.liveStreamingEnabled && (participant.permissions?.includes(RoomPermission.START_BROADCAST) ?? isModerator));
+    const canScreenshare = Boolean(room.features.screenShareEnabled && (participant.permissions?.includes(RoomPermission.SHARE_SCREEN) ?? true));
 
-    // If appSecret is configured, sign a standard Jitsi JWT (RFC 7519 / JaaS compatible)
+    // Only generate HS256 token if an appSecret is explicitly configured and not using public meet.jit.si.
+    // Public meet.jit.si requires 8x8 JaaS RS256 tokens with a 'kid' header; HS256 tokens fail authentication.
     let token = '';
-    if (this.appSecret) {
+    const isPublicMeetJitsi = this.domain === 'meet.jit.si' || this.domain.endsWith('.meet.jit.si');
+    if (this.appSecret && !isPublicMeetJitsi) {
       const payload = {
         context: {
           user: {
@@ -40,9 +45,9 @@ export class JitsiMediaProvider implements IMediaProvider {
             moderator: isModerator
           },
           features: {
-            recording: room.features.recordingEnabled,
-            livestreaming: room.features.liveStreamingEnabled,
-            screenSharing: room.features.screenShareEnabled
+            recording: canRecord,
+            livestreaming: canLivestream,
+            'screen-sharing': canScreenshare
           }
         },
         aud: this.appId || 'nexusrtc',

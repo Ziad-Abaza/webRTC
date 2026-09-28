@@ -117,7 +117,8 @@ export function createServer(customDb?: IDatabaseAdapter) {
 }
 
 // Auto-run if executed directly
-if (process.argv[1]?.endsWith('dist/index.js') || process.argv[1]?.endsWith('src/index.ts')) {
+const isMain = process.argv[1] && /index\.(js|ts)$/.test(process.argv[1].replace(/\\/g, '/'));
+if (isMain) {
   const instance = createServer();
   instance.start();
 }

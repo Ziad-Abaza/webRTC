@@ -103,6 +103,17 @@ export const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
  */
 export interface RoomPermissionsConfig {
   /**
+   * List of participant IDs banned/evicted from the room
+   */
+  bannedParticipantIds?: string[];
+
+  /**
+   * List of participant IDs issued elevated/privileged roles (host, moderator, custom privileged roles).
+   * Untrusted callers without hostKey cannot hijack or impersonate these identities.
+   */
+  privilegedParticipantIds?: string[];
+
+  /**
    * Overrides or extensions for role-based permissions in this room.
    * e.g. `{ participant: [RoomPermission.SEND_AUDIO, RoomPermission.SEND_CHAT] }` (no video or screenshare)
    */
@@ -129,23 +140,118 @@ export interface RoomPermissionsConfig {
 }
 
 /**
+ * Authoritative role hierarchy ranking for moderation decisions.
+ */
+export const ROLE_HIERARCHY: Record<string, number> = {
+  host: 100,
+  moderator: 50,
+  participant: 10,
+  viewer: 1
+};
+
+export function getRoleRank(role: string): number {
+  return ROLE_HIERARCHY[role] ?? 10;
+}
+
+/**
+ * Authoritatively verifies whether a caller can moderate (mute/kick) a target.
+ * Enforces:
+ * 1. Room owner/host has absolute immunity: cannot be kicked or muted by anyone.
+ * 2. Self-moderation via moderate action is prohibited.
+ * 3. Caller must have strictly higher role rank than target (rank(caller) > rank(target)).
+ * 4. Moderators cannot moderate other moderators.
+ */
+export function canModerateParticipant(
+  callerRole: string,
+  callerId: string,
+  targetRole: string,
+  targetId: string,
+  roomHostId?: string
+): { allowed: boolean; reason?: string } {
+  if (callerId === targetId) {
+    return { allowed: false, reason: 'Cannot moderate self' };
+  }
+
+  // Room Host has absolute immunity from moderation actions
+  if (targetRole === 'host' || (roomHostId && targetId === roomHostId)) {
+    return { allowed: false, reason: 'Cannot moderate or kick the room host' };
+  }
+
+  // Target is a moderator: ONLY the host can moderate moderators
+  if (targetRole === 'moderator' && callerRole !== 'host' && (!roomHostId || callerId !== roomHostId)) {
+    return { allowed: false, reason: 'Moderators cannot be moderated by peer moderators or participants' };
+  }
+
+  const callerRank = getRoleRank(callerRole);
+  const targetRank = getRoleRank(targetRole);
+
+  if (callerRank <= targetRank) {
+    return { allowed: false, reason: 'Unauthorized to moderate participant with equal or higher role hierarchy' };
+  }
+
+  return { allowed: true };
+}
+
+/**
  * Resolves the effective permissions for a participant in a given room.
  */
 export function resolveEffectivePermissions(
   role: string,
   participantId?: string,
-  config?: RoomPermissionsConfig
-): Set<RoomPermission> {
-  // If participant override exists, it takes highest precedence
-  if (participantId && config?.participantOverrides?.[participantId]) {
-    return new Set(config.participantOverrides[participantId]);
+  config?: RoomPermissionsConfig,
+  features?: {
+    recordingEnabled?: boolean;
+    chatEnabled?: boolean;
+    screenShareEnabled?: boolean;
+    breakoutRoomsEnabled?: boolean;
+    raiseHandEnabled?: boolean;
+    liveStreamingEnabled?: boolean;
   }
-
-  // Next check custom role permissions defined for the room
-  const rolePerms = config?.roles?.[role] || DEFAULT_ROLE_PERMISSIONS[role] || [];
+): Set<RoomPermission> {
+  // If role is host, host ALWAYS retains base host capabilities.
+  // Overrides or custom roles can add capabilities, but CANNOT strip host administrative/moderation powers.
+  let rolePerms: RoomPermission[];
+  if (role === 'host') {
+    const baseHost = DEFAULT_ROLE_PERMISSIONS.host;
+    const customHost = config?.roles?.['host'] || [];
+    const overrides = (participantId && config?.participantOverrides?.[participantId]) || [];
+    rolePerms = Array.from(new Set([...baseHost, ...customHost, ...overrides]));
+  } else if (participantId && config?.participantOverrides?.[participantId]) {
+    rolePerms = config.participantOverrides[participantId];
+  } else {
+    rolePerms = config?.roles?.[role] || DEFAULT_ROLE_PERMISSIONS[role] || [];
+  }
   const effective = new Set<RoomPermission>(rolePerms);
 
-  // If host, global locks do not apply
+  // Authoritative feature enforcement: if a room feature is disabled,
+  // that capability is disabled for all participants including host.
+  if (features) {
+    if (features.recordingEnabled === false) {
+      effective.delete(RoomPermission.START_RECORDING);
+      effective.delete(RoomPermission.STOP_RECORDING);
+    }
+    if (features.breakoutRoomsEnabled === false) {
+      effective.delete(RoomPermission.CREATE_BREAKOUT);
+      effective.delete(RoomPermission.JOIN_BREAKOUT);
+      effective.delete(RoomPermission.BROADCAST_BREAKOUT);
+    }
+    if (features.chatEnabled === false) {
+      effective.delete(RoomPermission.SEND_CHAT);
+      effective.delete(RoomPermission.SEND_PRIVATE_CHAT);
+    }
+    if (features.screenShareEnabled === false) {
+      effective.delete(RoomPermission.SHARE_SCREEN);
+    }
+    if (features.raiseHandEnabled === false) {
+      effective.delete(RoomPermission.RAISE_HAND);
+    }
+    if (features.liveStreamingEnabled === false) {
+      effective.delete(RoomPermission.START_BROADCAST);
+      effective.delete(RoomPermission.STOP_BROADCAST);
+    }
+  }
+
+  // If host, global dynamic locks do not apply
   if (role === 'host') {
     return effective;
   }

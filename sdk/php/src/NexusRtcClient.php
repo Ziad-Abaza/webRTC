@@ -52,6 +52,45 @@ class NexusRtcClient
     }
 
     /**
+     * Create an authoritative invitation for a room.
+     */
+    public function createInvitation(string $roomIdOrSlug, array $params = []): array
+    {
+        return $this->request('POST', "/api/v1/rooms/{$roomIdOrSlug}/invitations", $params);
+    }
+
+    /**
+     * List all invitations for a room.
+     */
+    public function listInvitations(string $roomIdOrSlug): array
+    {
+        return $this->request('GET', "/api/v1/rooms/{$roomIdOrSlug}/invitations");
+    }
+
+    /**
+     * Get details of an invitation by code (public/sanitized inspection).
+     */
+    public function getInvitation(string $code): ?array
+    {
+        try {
+            return $this->request('GET', "/api/v1/invitations/{$code}");
+        } catch (NexusRtcException $e) {
+            if (str_contains($e->getMessage(), '404') || str_contains($e->getMessage(), 'not found')) {
+                return null;
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Revoke an invitation by code or ID.
+     */
+    public function revokeInvitation(string $codeOrId): array
+    {
+        return $this->request('POST', "/api/v1/invitations/{$codeOrId}/revoke");
+    }
+
+    /**
      * Get configured room permissions and role capabilities.
      */
     public function getRoomPermissions(string $roomIdOrSlug): array
@@ -130,6 +169,21 @@ class NexusRtcClient
     }
 
     /**
+     * Authoritatively ban/evict a participant from the room session.
+     */
+    public function banParticipant(string $roomIdOrSlug, string $participantId): array
+    {
+        $perms = $this->getRoomPermissions($roomIdOrSlug);
+        $banned = $perms['bannedParticipantIds'] ?? [];
+        if (!in_array($participantId, $banned, true)) {
+            $banned[] = $participantId;
+        }
+        return $this->updateRoomPermissions($roomIdOrSlug, [
+            'bannedParticipantIds' => $banned
+        ]);
+    }
+
+    /**
      * Internal HTTP request handler using curl.
      */
     protected function request(string $method, string $endpoint, array $data = []): array
@@ -146,8 +200,8 @@ class NexusRtcClient
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
 
-        if ($method === 'POST') {
-            curl_setopt($ch, CURLOPT_POST, true);
+        if ($method === 'POST' || $method === 'PUT' || $method === 'PATCH') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
             $jsonPayload = json_encode($data);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
             $headers[] = 'Content-Type: application/json';

@@ -82,6 +82,20 @@
                 </div>
             </div>
 
+            <div class="pt-2">
+                <span class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">Host Permissions</span>
+                <div class="grid grid-cols-2 gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-700/60">
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowHostRecording" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Host May Record</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="allowHostBreakout" value="1" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500">
+                        <span>Host May Launch Breakouts</span>
+                    </label>
+                </div>
+            </div>
+
             <button type="submit" 
                 class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold shadow-lg shadow-indigo-600/30 hover:opacity-95 transition active:scale-[0.99] flex items-center justify-center space-x-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>

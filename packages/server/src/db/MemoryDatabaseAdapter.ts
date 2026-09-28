@@ -5,7 +5,8 @@ import {
   ChatMessage,
   Recording,
   BreakoutRoom,
-  LiveBroadcastConfig
+  LiveBroadcastConfig,
+  RoomInvitation
 } from '@nexusrtc/core';
 
 export class MemoryDatabaseAdapter implements IDatabaseAdapter {
@@ -15,6 +16,7 @@ export class MemoryDatabaseAdapter implements IDatabaseAdapter {
   private recordings = new Map<string, Recording>();
   private breakoutRooms = new Map<string, BreakoutRoom>();
   private broadcastConfigs = new Map<string, LiveBroadcastConfig>();
+  private invitations = new Map<string, RoomInvitation>();
 
   async init(): Promise<void> {}
   async close(): Promise<void> {
@@ -24,6 +26,7 @@ export class MemoryDatabaseAdapter implements IDatabaseAdapter {
     this.recordings.clear();
     this.breakoutRooms.clear();
     this.broadcastConfigs.clear();
+    this.invitations.clear();
   }
 
   // Room operations
@@ -207,5 +210,43 @@ export class MemoryDatabaseAdapter implements IDatabaseAdapter {
   async getBroadcastConfig(roomId: string): Promise<LiveBroadcastConfig | null> {
     const b = this.broadcastConfigs.get(roomId);
     return b ? { ...b } : null;
+  }
+
+  // Invitation operations
+  async createInvitation(invitation: RoomInvitation): Promise<RoomInvitation> {
+    this.invitations.set(invitation.id, { ...invitation });
+    return { ...invitation };
+  }
+
+  async getInvitationByCode(code: string): Promise<RoomInvitation | null> {
+    for (const inv of this.invitations.values()) {
+      if (inv.code === code) {
+        return { ...inv };
+      }
+    }
+    return null;
+  }
+
+  async getInvitationById(id: string): Promise<RoomInvitation | null> {
+    const inv = this.invitations.get(id);
+    return inv ? { ...inv } : null;
+  }
+
+  async listInvitations(roomId: string): Promise<RoomInvitation[]> {
+    return Array.from(this.invitations.values())
+      .filter((inv) => inv.roomId === roomId)
+      .map((inv) => ({ ...inv }));
+  }
+
+  async updateInvitation(id: string, updates: Partial<RoomInvitation>): Promise<RoomInvitation> {
+    const inv = this.invitations.get(id);
+    if (!inv) throw new Error(`Invitation ${id} not found`);
+    const updated = { ...inv, ...updates };
+    this.invitations.set(id, updated);
+    return { ...updated };
+  }
+
+  async revokeInvitation(id: string): Promise<RoomInvitation> {
+    return this.updateInvitation(id, { status: 'revoked' });
   }
 }

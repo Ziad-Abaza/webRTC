@@ -7,7 +7,9 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "start": "node packages/server/dist/src/index.js",
+    "server": "npm start --workspace=@nexusrtc/server"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

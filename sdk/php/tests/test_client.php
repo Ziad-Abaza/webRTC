@@ -59,7 +59,23 @@ try {
 
     $recStop = $client->stopRecording($recStart['id']);
     echo "  -> Recording Stopped: {$recStop['id']} (Status: {$recStop['status']}, Duration: {$recStop['durationSeconds']}s)\n";
-    echo "  -> File URL: {$recStop['fileUrl']}\n";
+    // 7. Test Invitations API
+    echo "[7] Testing Invitations API...\n";
+    $invitation = $client->createInvitation($room->slug, [
+        'role' => 'participant',
+        'expiresInSeconds' => 3600,
+        'maxUses' => 5
+    ]);
+    echo "  -> Created Invitation Code: {$invitation['code']}, Role: {$invitation['role']}\n";
+
+    $invList = $client->listInvitations($room->slug);
+    echo "  -> Listed Invitations Count: " . count($invList) . "\n";
+
+    $invDetails = $client->getInvitation($invitation['code']);
+    echo "  -> Inspected Invitation Code: {$invDetails['code']}, IsValid: " . ($invDetails['isValid'] ? 'true' : 'false') . "\n";
+
+    $revoked = $client->revokeInvitation($invitation['code']);
+    echo "  -> Revoked Invitation Code: {$revoked['invitation']['code']}, Status: {$revoked['invitation']['status']}\n";
 
     echo "\n>>> All PHP Client Tests Passed Successfully! <<<\n";
 } catch (NexusRtcException $e) {

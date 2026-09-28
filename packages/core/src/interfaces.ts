@@ -5,7 +5,8 @@ import {
   ChatMessage,
   BreakoutRoom,
   LiveBroadcastConfig,
-  MediaTokenResult
+  MediaTokenResult,
+  RoomInvitation
 } from './types.js';
 
 /**
@@ -130,4 +131,12 @@ export interface IDatabaseAdapter {
   // Broadcast operations
   saveBroadcastConfig(config: LiveBroadcastConfig): Promise<LiveBroadcastConfig>;
   getBroadcastConfig(roomId: string): Promise<LiveBroadcastConfig | null>;
+
+  // Invitation operations
+  createInvitation(invitation: RoomInvitation): Promise<RoomInvitation>;
+  getInvitationByCode(code: string): Promise<RoomInvitation | null>;
+  getInvitationById(id: string): Promise<RoomInvitation | null>;
+  listInvitations(roomId: string): Promise<RoomInvitation[]>;
+  updateInvitation(id: string, updates: Partial<RoomInvitation>): Promise<RoomInvitation>;
+  revokeInvitation(id: string): Promise<RoomInvitation>;
 }

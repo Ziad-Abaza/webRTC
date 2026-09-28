@@ -81,17 +81,43 @@ components:
     RoomPermissions:
       type: object
       properties:
+        bannedParticipantIds:
+          type: array
+          description: List of participant IDs evicted or banned from the room session.
+          items:
+            type: string
+        privilegedParticipantIds:
+          type: array
+          description: List of participant IDs issued privileged roles (host, moderator, custom privileged roles).
+          items:
+            type: string
         defaultRole:
           type: string
           example: participant
         roles:
           type: object
+          description: Role capability mappings. Only the authoritative room host can modify role mappings.
           additionalProperties:
             $ref: '#/components/schemas/RolePermissions'
         participantOverrides:
           type: object
+          description: Granular participant-specific permission overrides. Only the authoritative room host can modify.
           additionalProperties:
             $ref: '#/components/schemas/RolePermissions'
+        locks:
+          type: object
+          description: Dynamic session feature locks enforceable by host or moderators with update_permissions capability.
+          properties:
+            lockMicrophones:
+              type: boolean
+            lockCameras:
+              type: boolean
+            lockScreenshare:
+              type: boolean
+            lockChat:
+              type: boolean
+            lockPrivateChat:
+              type: boolean
 
     Room:
       type: object

@@ -4,6 +4,7 @@ import { EventEmitter } from '../src/EventEmitter.js';
 import { ChatManager } from '../src/ChatManager.js';
 import { BreakoutManager } from '../src/BreakoutManager.js';
 import { MediaManager } from '../src/MediaManager.js';
+import { NexusClient } from '../src/NexusClient.js';
 import { NexusEvents } from '@nexusrtc/core';
 
 test('NexusRTC Client SDK Unit Tests', async (t) => {
@@ -80,5 +81,65 @@ test('NexusRTC Client SDK Unit Tests', async (t) => {
     media.muteVideo(false);
     assert.equal(media.getVideoMuted(), false);
     assert.equal(dispatched[dispatched.length - 1].payload.isVideoMuted, false);
+  });
+
+  await t.test('BreakoutManager getBreakouts alias and breakoutCreated event', () => {
+    const breakout = new BreakoutManager(() => {});
+    let eventReceived = false;
+    breakout.on('breakoutCreated', (room) => {
+      eventReceived = true;
+      assert.equal(room.name, 'Sub Room 1');
+    });
+
+    breakout.handleBreakoutCreated({
+      id: 'sub-1',
+      parentRoomId: 'room-1',
+      name: 'Sub Room 1',
+      createdAt: Date.now(),
+      participantIds: [],
+      isActive: true
+    });
+
+    assert.equal(eventReceived, true);
+    assert.equal(breakout.getBreakouts().length, 1);
+    assert.equal(breakout.getBreakouts()[0].name, 'Sub Room 1');
+  });
+
+  await t.test('NexusClient hasPermission and getEffectivePermissions', () => {
+    const client = new NexusClient({
+      wsUrl: 'ws://127.0.0.1:4999/ws',
+      token: 'test-token',
+      autoConnect: false
+    });
+
+    // Before joining
+    assert.equal(client.hasPermission('media:send_audio'), false);
+    assert.deepEqual(client.getEffectivePermissions(), []);
+
+    // Simulate join with permissions
+    (client as any).handleSocketEvent(NexusEvents.JOINED, {
+      room: { id: 'r1', slug: 'r1', title: 'Room', hostId: 'h1', createdAt: Date.now(), features: {}, permissions: {} },
+      self: {
+        id: 'p1',
+        name: 'Alice',
+        role: 'participant',
+        joinedAt: Date.now(),
+        isAudioMuted: false,
+        isVideoMuted: false,
+        isScreenSharing: false,
+        isHandRaised: false,
+        permissions: ['media:send_audio', 'chat:send']
+      },
+      participants: [],
+      activeBreakoutRooms: [],
+      activeBroadcast: null,
+      activeRecording: null,
+      media: { provider: 'jitsi', domain: 'meet.jit.si', room: 'r1', appId: '' }
+    });
+
+    assert.equal(client.hasPermission('media:send_audio'), true);
+    assert.equal(client.hasPermission('chat:send'), true);
+    assert.equal(client.hasPermission('moderation:mute_others'), false);
+    assert.deepEqual(client.getEffectivePermissions(), ['media:send_audio', 'chat:send']);
   });
 });
